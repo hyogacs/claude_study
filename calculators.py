@@ -1,5 +1,16 @@
 from models import NISAUsage
 
+# 貴金属に分類する銘柄コード
+PRECIOUS_METAL_SYMBOLS = {'1540', '1541', '1542', '1693'}
+
+
+def reclassify_asset_class(holding):
+    """特殊銘柄の資産クラスを再分類する"""
+    symbol = str(holding.symbol).strip()
+    if symbol in PRECIOUS_METAL_SYMBOLS:
+        return '貴金属'
+    return holding.asset_class or '不明'
+
 
 def compound_interest_simulation(
     initial_amount,
@@ -66,55 +77,86 @@ def calculate_fire_number(annual_expenses, withdrawal_rate=4.0):
     return round(annual_expenses / (withdrawal_rate / 100))
 
 
-def calculate_nisa_summary(member_id, nisa_usages):
+def calculate_nisa_from_holdings(member):
     """
-    NISAの利用状況サマリーを計算
+    保有資産データからNISA利用状況を自動計算する
 
-    新NISA制度:
-    - つみたて投資枠: 年間120万円
-    - 成長投資枠: 年間240万円
-    - 合計年間投資枠: 360万円
-    - 非課税保有限度額（総枠）: 1,800万円
-    - うち成長投資枠: 1,200万円まで
+    Returns:
+        dict: NISA利用状況のサマリー
     """
-    summary = {
-        'member_id': member_id,
-        'yearly': [],
-        'total_tsumitate': 0,
-        'total_growth': 0,
-        'total_holding': 0,
-        'lifetime_remaining': NISAUsage.TOTAL_LIFETIME_LIMIT,
-        'growth_lifetime_remaining': NISAUsage.GROWTH_LIFETIME_LIMIT,
+    tsumitate_cost = 0  # つみたて投資枠の取得金額合計
+    growth_cost = 0     # 成長投資枠の取得金額合計
+    tsumitate_value = 0  # つみたて投資枠の時価合計
+    growth_value = 0     # 成長投資枠の時価合計
+    tsumitate_holdings = []
+    growth_holdings = []
+
+    for account in member.accounts:
+        if account.account_type != 'NISA':
+            continue
+
+        # account_name から NISA種別を判定
+        is_tsumitate = 'つみたて' in (account.account_name or '')
+        is_growth = '成長' in (account.account_name or '')
+
+        # account_name に種別がない場合、資産クラスで推定
+        # 投資信託 → つみたて、株式 → 成長 がデフォルト
+        for h in account.holdings:
+            cost = h.cost_basis
+            value = h.market_value
+            pnl = h.unrealized_pnl
+            pnl_pct = h.pnl_percent
+
+            holding_info = {
+                'name': h.name,
+                'symbol': h.symbol,
+                'cost': cost,
+                'value': value,
+                'pnl': pnl,
+                'pnl_percent': pnl_pct,
+            }
+
+            if is_tsumitate:
+                tsumitate_cost += cost
+                tsumitate_value += value
+                tsumitate_holdings.append(holding_info)
+            elif is_growth:
+                growth_cost += cost
+                growth_value += value
+                growth_holdings.append(holding_info)
+            else:
+                # 投資信託 → つみたて、それ以外 → 成長
+                if h.asset_class == '投資信託':
+                    tsumitate_cost += cost
+                    tsumitate_value += value
+                    tsumitate_holdings.append(holding_info)
+                else:
+                    growth_cost += cost
+                    growth_value += value
+                    growth_holdings.append(holding_info)
+
+    total_cost = tsumitate_cost + growth_cost
+    total_value = tsumitate_value + growth_value
+
+    return {
+        'tsumitate_cost': tsumitate_cost,
+        'tsumitate_value': tsumitate_value,
+        'growth_cost': growth_cost,
+        'growth_value': growth_value,
+        'total_cost': total_cost,
+        'total_value': total_value,
+        'tsumitate_holdings': tsumitate_holdings,
+        'growth_holdings': growth_holdings,
+        'lifetime_remaining': max(0, NISAUsage.TOTAL_LIFETIME_LIMIT - total_cost),
+        'growth_lifetime_remaining': max(0, NISAUsage.GROWTH_LIFETIME_LIMIT - growth_cost),
+        'tsumitate_annual_remaining': max(0, NISAUsage.TSUMITATE_ANNUAL_LIMIT - tsumitate_cost),
+        'growth_annual_remaining': max(0, NISAUsage.GROWTH_ANNUAL_LIMIT - growth_cost),
     }
-
-    total_holding = 0
-    total_growth_holding = 0
-
-    for usage in nisa_usages:
-        year_data = {
-            'year': usage.year,
-            'tsumitate_used': usage.tsumitate_used,
-            'tsumitate_limit': NISAUsage.TSUMITATE_ANNUAL_LIMIT,
-            'tsumitate_remaining': usage.tsumitate_remaining,
-            'growth_used': usage.growth_used,
-            'growth_limit': NISAUsage.GROWTH_ANNUAL_LIMIT,
-            'growth_remaining': usage.growth_remaining,
-            'annual_total': usage.annual_total_used,
-        }
-        summary['yearly'].append(year_data)
-        total_holding += usage.tsumitate_used + usage.growth_used
-        total_growth_holding += usage.growth_used
-
-    summary['total_holding'] = total_holding
-    summary['lifetime_remaining'] = max(0, NISAUsage.TOTAL_LIFETIME_LIMIT - total_holding)
-    summary['growth_lifetime_remaining'] = max(0, NISAUsage.GROWTH_LIFETIME_LIMIT - total_growth_holding)
-
-    return summary
 
 
 def calculate_asset_allocation(holdings):
     """
-    資産配分を計算
+    資産配分を計算（貴金属の再分類を含む）
 
     Returns:
         allocation: 資産クラスごとの配分データ
@@ -125,7 +167,7 @@ def calculate_asset_allocation(holdings):
     for h in holdings:
         value = h.market_value
         total_value += value
-        cls = h.asset_class or '不明'
+        cls = reclassify_asset_class(h)
         if cls not in allocation:
             allocation[cls] = {'value': 0, 'count': 0, 'holdings': []}
         allocation[cls]['value'] += value
@@ -170,26 +212,3 @@ def calculate_broker_allocation(holdings):
         }
 
     return {'total_value': total, 'by_broker': result}
-
-
-def calculate_currency_allocation(holdings):
-    """通貨ごとの資産配分を計算"""
-    by_currency = {}
-    total = 0
-
-    for h in holdings:
-        currency = h.currency or 'JPY'
-        value = h.market_value
-        total += value
-        if currency not in by_currency:
-            by_currency[currency] = 0
-        by_currency[currency] += value
-
-    result = {}
-    for currency, value in by_currency.items():
-        result[currency] = {
-            'value': value,
-            'percent': round((value / total * 100) if total > 0 else 0, 2),
-        }
-
-    return {'total_value': total, 'by_currency': result}

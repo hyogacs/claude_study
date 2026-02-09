@@ -2,91 +2,93 @@
 {% block title %}CSV導入 - 投資管理システム{% endblock %}
 
 {% block content %}
-<h2><i class="bi bi-upload"></i> CSV導入</h2>
+<div class="page-header">
+    <h1 class="page-title">CSV導入</h1>
+</div>
 
 {% if not members %}
-<div class="alert alert-warning">
+<div class="alert-apple alert-info">
     先に<a href="/family">家族管理</a>ページでメンバーを登録してください。
 </div>
 {% else %}
-<div class="row">
-    <div class="col-md-8">
-        <div class="card mb-4">
-            <div class="card-header">CSVファイルをインポート</div>
-            <div class="card-body">
-                <form method="POST" action="/import/upload" enctype="multipart/form-data">
-                    <div class="mb-3">
-                        <label class="form-label">メンバー</label>
-                        <select class="form-select" name="member_id" required>
-                            <option value="">選択してください</option>
-                            {% for member in members %}
-                            <option value="{{ member.id }}">
-                                {{ member.family.name }} - {{ member.name }}（{{ member.relationship }}）
-                            </option>
-                            {% endfor %}
-                        </select>
-                    </div>
+<div class="grid-2" style="grid-template-columns: 2fr 1fr;">
+    <div class="card-apple">
+        <div class="card-apple-header">CSVファイルをインポート</div>
+        <div class="card-apple-body">
+            <form method="POST" action="/import/upload" enctype="multipart/form-data">
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">メンバー</label>
+                    <select class="form-select" name="member_id" required>
+                        <option value="">選択してください</option>
+                        {% for member in members %}
+                        <option value="{{ member.id }}">
+                            {{ member.family.name }} - {{ member.name }}（{{ member.relationship }}）
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
 
-                    <div class="mb-3">
-                        <label class="form-label">証券会社</label>
-                        <select class="form-select" name="broker" required>
-                            <option value="SBI">SBI証券</option>
-                            <option value="moomoo">moomoo証券</option>
-                        </select>
-                    </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">証券会社</label>
+                    <select class="form-select" name="broker" required>
+                        <option value="SBI">SBI証券</option>
+                        <option value="moomoo">moomoo証券</option>
+                    </select>
+                </div>
 
-                    <div class="mb-3">
-                        <label class="form-label">ファイル種別</label>
-                        <select class="form-select" name="file_type">
-                            <option value="holdings">保有資産一覧</option>
-                            <option value="transactions">取引履歴</option>
-                        </select>
-                    </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">ファイル種別</label>
+                    <select class="form-select" name="file_type">
+                        <option value="holdings">保有資産一覧</option>
+                        <option value="transactions">取引履歴</option>
+                    </select>
+                </div>
 
-                    <div class="mb-3">
-                        <label class="form-label">CSVファイル</label>
-                        <input type="file" class="form-control" name="csv_file" accept=".csv" required>
-                        <div class="form-text">CSV形式のファイルを選択してください（最大16MB）</div>
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">CSVファイル</label>
+                    <input type="file" class="form-control" name="csv_file" accept=".csv" required>
+                    <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 4px;">
+                        CSV形式のファイルを選択してください（最大16MB）
                     </div>
+                </div>
 
-                    <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-upload"></i> インポート
-                    </button>
-                </form>
-            </div>
+                <button type="submit" class="btn-apple btn-apple-primary" style="width: 100%;">
+                    <i class="bi bi-arrow-up-circle"></i> インポート
+                </button>
+            </form>
         </div>
     </div>
 
-    <div class="col-md-4">
-        <div class="card mb-4">
-            <div class="card-header">SBI証券 CSV形式</div>
-            <div class="card-body">
-                <p class="small">SBI証券の「保有証券一覧」CSVに対応しています。</p>
-                <p class="small">ファイル内のセクション区分から口座タイプを自動認識します：</p>
-                <ul class="small">
+    <div>
+        <div class="card-apple" style="margin-bottom: 20px;">
+            <div class="card-apple-header"><span class="badge-apple badge-sbi" style="margin-right: 6px;">SBI</span> SBI証券 CSV形式</div>
+            <div class="card-apple-body">
+                <p style="font-size: 0.82rem; margin-bottom: 10px;">SBI証券の「保有証券一覧」CSVに対応しています。</p>
+                <p style="font-size: 0.82rem; margin-bottom: 8px;">ファイル内のセクション区分から口座タイプを自動認識：</p>
+                <ul style="font-size: 0.82rem; padding-left: 18px; margin-bottom: 10px;">
                     <li>株式（特定預り / 一般預り / NISA）</li>
                     <li>投資信託（特定預り / NISAつみたて投資枠）</li>
                     <li>国内債券</li>
                 </ul>
-                <p class="small text-muted">エンコーディング: Shift_JIS / UTF-8（自動検出）</p>
+                <div style="font-size: 0.75rem; color: var(--text-secondary);">エンコーディング: Shift_JIS / UTF-8（自動検出）</div>
             </div>
         </div>
 
-        <div class="card">
-            <div class="card-header">moomoo証券 CSV形式</div>
-            <div class="card-body">
-                <p class="small">moomoo証券の保有資産CSVに対応しています。</p>
-                <p class="small">想定カラム:</p>
-                <ul class="small">
+        <div class="card-apple">
+            <div class="card-apple-header"><span class="badge-apple badge-moomoo" style="margin-right: 6px;">moomoo</span> moomoo証券 CSV形式</div>
+            <div class="card-apple-body">
+                <p style="font-size: 0.82rem; margin-bottom: 10px;">moomoo証券の保有資産CSVに対応しています。</p>
+                <p style="font-size: 0.82rem; margin-bottom: 8px;">想定カラム:</p>
+                <ul style="font-size: 0.82rem; padding-left: 18px; margin-bottom: 10px;">
                     <li>Symbol / 銘柄コード</li>
                     <li>Name / 銘柄名</li>
                     <li>Qty / 数量</li>
                     <li>Avg Cost / 取得単価</li>
                     <li>Market Price / 現在値</li>
                     <li>Market Value / 評価額</li>
-                    <li>P&L / 損益</li>
+                    <li>P&amp;L / 損益</li>
                 </ul>
-                <p class="small text-muted">エンコーディング: UTF-8</p>
+                <div style="font-size: 0.75rem; color: var(--text-secondary);">エンコーディング: UTF-8</div>
             </div>
         </div>
     </div>

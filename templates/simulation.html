@@ -2,92 +2,110 @@
 {% block title %}複利シミュレーション - 投資管理システム{% endblock %}
 
 {% block content %}
-<h2><i class="bi bi-calculator"></i> 複利シミュレーション</h2>
+<div class="page-header">
+    <h1 class="page-title">複利シミュレーション</h1>
+</div>
 
-<div class="row">
-    <div class="col-md-4">
-        <div class="card mb-4">
-            <div class="card-header">シミュレーション条件</div>
-            <div class="card-body">
-                <div class="mb-3">
-                    <label class="form-label">初期投資額（円）</label>
-                    <input type="number" class="form-control" id="initialAmount" value="1000000" step="10000">
+<div class="grid-2" style="grid-template-columns: 1fr 2fr;">
+    <!-- 左カラム: 条件入力 -->
+    <div>
+        <div class="card-apple" style="margin-bottom: 20px;">
+            <div class="card-apple-header">シミュレーション条件</div>
+            <div class="card-apple-body">
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">初期投資額（円）</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="number" class="form-control" id="initialAmount" value="1000000" step="10000">
+                        {% if current_portfolio_value and current_portfolio_value > 0 %}
+                        <button class="btn-apple btn-apple-secondary btn-apple-sm" onclick="document.getElementById('initialAmount').value='{{ current_portfolio_value }}'" style="white-space: nowrap;">
+                            現在の資産を設定
+                        </button>
+                        {% endif %}
+                    </div>
+                    {% if current_portfolio_value and current_portfolio_value > 0 %}
+                    <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 4px;">
+                        現在の総資産: {{ current_portfolio_value | currency }}
+                    </div>
+                    {% endif %}
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">毎月の積立額（円）</label>
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">毎月の積立額（円）</label>
                     <input type="number" class="form-control" id="monthlyContribution" value="50000" step="1000">
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">想定年利（%）</label>
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">想定年利（%）</label>
                     <input type="number" class="form-control" id="annualRate" value="5.0" step="0.1" min="0" max="30">
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">運用年数</label>
-                    <input type="range" class="form-range" id="years" min="1" max="50" value="20">
-                    <span id="yearsLabel">20年</span>
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">運用年数</label>
+                    <input type="range" style="width: 100%;" id="years" min="1" max="50" value="20">
+                    <div style="text-align: center; font-size: 0.88rem; font-weight: 600; margin-top: 4px;" id="yearsLabel">20年</div>
                 </div>
-                <div class="mb-3 form-check">
-                    <input type="checkbox" class="form-check-input" id="isNisa">
-                    <label class="form-check-label">NISA口座（非課税）</label>
+                <div style="margin-bottom: 20px;">
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 0.88rem; cursor: pointer;">
+                        <input type="checkbox" id="isNisa" style="width: 18px; height: 18px;">
+                        NISA口座（非課税）
+                    </label>
                 </div>
-                <button class="btn btn-primary w-100" onclick="runSimulation()">
+                <button class="btn-apple btn-apple-primary" style="width: 100%;" onclick="runSimulation()">
                     <i class="bi bi-play-circle"></i> シミュレーション実行
                 </button>
             </div>
         </div>
 
         <!-- 結果サマリー -->
-        <div class="card mb-4" id="resultSummary" style="display:none">
-            <div class="card-header">シミュレーション結果</div>
-            <div class="card-body">
-                <table class="table table-sm">
-                    <tr>
-                        <td>最終資産額</td>
-                        <td class="text-end fw-bold" id="finalBalance">-</td>
-                    </tr>
-                    <tr>
-                        <td>投資元本合計</td>
-                        <td class="text-end" id="totalInvested">-</td>
-                    </tr>
-                    <tr>
-                        <td>運用益</td>
-                        <td class="text-end text-success" id="totalGain">-</td>
-                    </tr>
-                    <tr>
-                        <td>NISA vs 課税の差額</td>
-                        <td class="text-end text-primary" id="nisaDiff">-</td>
-                    </tr>
+        <div class="card-apple" id="resultSummary" style="display: none;">
+            <div class="card-apple-header">シミュレーション結果</div>
+            <div class="card-apple-body" style="padding: 0;">
+                <table class="table-apple">
+                    <tbody>
+                        <tr>
+                            <td style="font-weight: 600;">最終資産額</td>
+                            <td style="text-align: right; font-weight: 700; font-size: 1.1rem;" id="finalBalance">-</td>
+                        </tr>
+                        <tr>
+                            <td>投資元本合計</td>
+                            <td style="text-align: right;" id="totalInvested">-</td>
+                        </tr>
+                        <tr>
+                            <td>運用益</td>
+                            <td style="text-align: right;" class="text-positive" id="totalGain">-</td>
+                        </tr>
+                        <tr>
+                            <td>NISA vs 課税の差額</td>
+                            <td style="text-align: right; color: var(--accent); font-weight: 600;" id="nisaDiff">-</td>
+                        </tr>
+                    </tbody>
                 </table>
             </div>
         </div>
     </div>
 
-    <div class="col-md-8">
-        <div class="card mb-4">
-            <div class="card-header">資産推移グラフ</div>
-            <div class="card-body">
+    <!-- 右カラム: チャート & テーブル -->
+    <div>
+        <div class="card-apple" style="margin-bottom: 20px;">
+            <div class="card-apple-header">資産推移グラフ</div>
+            <div class="card-apple-body">
                 <canvas id="simulationChart" height="300"></canvas>
             </div>
         </div>
 
-        <div class="card">
-            <div class="card-header">年別詳細</div>
-            <div class="card-body">
-                <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
-                    <table class="table table-sm table-hover">
-                        <thead class="table-light sticky-top">
-                            <tr>
-                                <th>年</th>
-                                <th class="text-end">資産残高</th>
-                                <th class="text-end">投資元本</th>
-                                <th class="text-end">運用益累計</th>
-                                <th class="text-end">年間運用益</th>
-                            </tr>
-                        </thead>
-                        <tbody id="yearlyTable">
-                        </tbody>
-                    </table>
-                </div>
+        <div class="card-apple">
+            <div class="card-apple-header">年別詳細</div>
+            <div class="card-apple-body" style="padding: 0; max-height: 400px; overflow-y: auto;">
+                <table class="table-apple">
+                    <thead style="position: sticky; top: 0; z-index: 1;">
+                        <tr>
+                            <th>年</th>
+                            <th style="text-align: right;">資産残高</th>
+                            <th style="text-align: right;">投資元本</th>
+                            <th style="text-align: right;">運用益累計</th>
+                            <th style="text-align: right;">年間運用益</th>
+                        </tr>
+                    </thead>
+                    <tbody id="yearlyTable">
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -136,7 +154,7 @@ function runSimulation() {
         document.getElementById('totalGain').textContent = formatYen(last.total_gain);
         document.getElementById('nisaDiff').textContent = formatYen(lastNisa.balance - lastTaxed.balance);
 
-        // Chart
+        // Chart - Apple style colors
         const labels = sim.map(d => d.year + '年');
         if (simChart) simChart.destroy();
         simChart = new Chart(document.getElementById('simulationChart'), {
@@ -147,30 +165,56 @@ function runSimulation() {
                     {
                         label: 'NISA（非課税）',
                         data: nisa.map(d => d.balance),
-                        borderColor: '#198754',
-                        backgroundColor: 'rgba(25,135,84,0.1)',
+                        borderColor: '#34c759',
+                        backgroundColor: 'rgba(52,199,89,0.08)',
                         fill: true,
+                        borderWidth: 2,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        pointHoverRadius: 5,
                     },
                     {
                         label: '課税口座',
                         data: taxed.map(d => d.balance),
-                        borderColor: '#dc3545',
-                        backgroundColor: 'rgba(220,53,69,0.1)',
+                        borderColor: '#ff3b30',
+                        backgroundColor: 'rgba(255,59,48,0.06)',
                         fill: true,
+                        borderWidth: 2,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        pointHoverRadius: 5,
                     },
                     {
                         label: '投資元本',
                         data: sim.map(d => d.total_invested),
-                        borderColor: '#6c757d',
+                        borderColor: '#86868b',
                         borderDash: [5, 5],
                         fill: false,
+                        borderWidth: 1.5,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        pointHoverRadius: 5,
                     },
                 ],
             },
             options: {
                 responsive: true,
                 plugins: {
+                    datalabels: { display: false },
+                    legend: {
+                        labels: {
+                            font: { size: 11, family: '-apple-system, sans-serif' },
+                            usePointStyle: true,
+                            pointStyle: 'circle',
+                            padding: 16,
+                        },
+                    },
                     tooltip: {
+                        backgroundColor: 'rgba(0,0,0,0.78)',
+                        titleFont: { size: 12, weight: '600' },
+                        bodyFont: { size: 12 },
+                        cornerRadius: 10,
+                        padding: 12,
                         callbacks: {
                             label: function(ctx) {
                                 return ctx.dataset.label + ': ' + formatYen(ctx.raw);
@@ -179,8 +223,14 @@ function runSimulation() {
                     }
                 },
                 scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: { font: { size: 10, family: '-apple-system, sans-serif' } },
+                    },
                     y: {
+                        grid: { color: 'rgba(0,0,0,0.04)' },
                         ticks: {
+                            font: { size: 10, family: '-apple-system, sans-serif' },
                             callback: function(val) {
                                 if (val >= 100000000) return (val / 100000000).toFixed(1) + '億';
                                 if (val >= 10000) return (val / 10000).toFixed(0) + '万';
@@ -198,10 +248,10 @@ function runSimulation() {
         sim.forEach(d => {
             tbody.innerHTML += `<tr>
                 <td>${d.year}年目</td>
-                <td class="text-end">${formatYen(d.balance)}</td>
-                <td class="text-end">${formatYen(d.total_invested)}</td>
-                <td class="text-end text-success">${formatYen(d.total_gain)}</td>
-                <td class="text-end">${formatYen(d.yearly_interest)}</td>
+                <td style="text-align:right">${formatYen(d.balance)}</td>
+                <td style="text-align:right">${formatYen(d.total_invested)}</td>
+                <td style="text-align:right" class="text-positive">${formatYen(d.total_gain)}</td>
+                <td style="text-align:right">${formatYen(d.yearly_interest)}</td>
             </tr>`;
         });
     });

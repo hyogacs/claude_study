@@ -5,10 +5,9 @@ from csv_parsers import parse_sbi_holdings, parse_moomoo_holdings, parse_sbi_tra
 from calculators import (
     compound_interest_simulation,
     calculate_fire_number,
-    calculate_nisa_summary,
+    calculate_nisa_from_holdings,
     calculate_asset_allocation,
     calculate_broker_allocation,
-    calculate_currency_allocation,
 )
 from datetime import datetime
 
@@ -36,6 +35,15 @@ def format_currency(value, currency='JPY'):
 app.jinja_env.filters['currency'] = format_currency
 
 
+def _get_family_holdings(family):
+    """家族の全保有資産を取得"""
+    all_holdings = []
+    for member in family.members:
+        for account in member.accounts:
+            all_holdings.extend(account.holdings)
+    return all_holdings
+
+
 # ── ダッシュボード ─────────────────────────────
 @app.route('/')
 def dashboard():
@@ -52,13 +60,12 @@ def dashboard():
     if not selected_family:
         selected_family = families[0]
 
-    all_holdings = []
+    all_holdings = _get_family_holdings(selected_family)
     member_summaries = []
     for member in selected_family.members:
         member_holdings = []
         for account in member.accounts:
             member_holdings.extend(account.holdings)
-        all_holdings.extend(member_holdings)
         total = sum(h.market_value for h in member_holdings)
         pnl = sum(h.unrealized_pnl for h in member_holdings)
         member_summaries.append({
@@ -70,7 +77,6 @@ def dashboard():
 
     asset_alloc = calculate_asset_allocation(all_holdings) if all_holdings else None
     broker_alloc = calculate_broker_allocation(all_holdings) if all_holdings else None
-    currency_alloc = calculate_currency_allocation(all_holdings) if all_holdings else None
 
     summary = {
         'total_value': sum(h.market_value for h in all_holdings),
@@ -80,7 +86,6 @@ def dashboard():
         'member_summaries': member_summaries,
         'asset_allocation': asset_alloc,
         'broker_allocation': broker_alloc,
-        'currency_allocation': currency_alloc,
     }
 
     return render_template('dashboard.html', families=families,
@@ -220,7 +225,7 @@ def _import_holdings(member, broker, content):
         account_type = str(row.get('account_type', '特定'))
         nisa_type = str(row.get('nisa_type', ''))
 
-        cache_key = (broker, account_type)
+        cache_key = (broker, account_type, nisa_type)
         if cache_key not in account_cache:
             account_cache[cache_key] = _get_or_create_account(
                 member, broker, account_type, nisa_type
@@ -245,9 +250,10 @@ def _import_holdings(member, broker, content):
 
     # Build detail message
     details = []
-    for (b, at), acc in account_cache.items():
+    for (b, at, nt), acc in account_cache.items():
         n = Holding.query.filter_by(account_id=acc.id).count()
-        details.append(f'{at}: {n}件')
+        label = at + (f'({nt})' if nt else '')
+        details.append(f'{label}: {n}件')
     detail_str = '、'.join(details)
 
     flash(f'{broker}から{count}件の保有資産をインポートしました（{detail_str}）', 'success')
@@ -324,7 +330,13 @@ def assets():
 # ── 複利シミュレーション ─────────────────────────
 @app.route('/simulation')
 def simulation():
-    return render_template('simulation.html')
+    families = Family.query.all()
+    total_value = 0
+    if families:
+        family = families[0]
+        all_holdings = _get_family_holdings(family)
+        total_value = sum(h.market_value for h in all_holdings)
+    return render_template('simulation.html', current_portfolio_value=round(total_value))
 
 
 @app.route('/api/simulation', methods=['POST'])
@@ -352,6 +364,18 @@ def api_simulation():
     })
 
 
+@app.route('/api/portfolio_value')
+def api_portfolio_value():
+    """現在のポートフォリオ総額を返す"""
+    families = Family.query.all()
+    total = 0
+    if families:
+        for family in families:
+            holdings = _get_family_holdings(family)
+            total += sum(h.market_value for h in holdings)
+    return jsonify({'total_value': round(total)})
+
+
 # ── NISA管理 ──────────────────────────────────
 @app.route('/nisa')
 def nisa():
@@ -371,58 +395,27 @@ def nisa():
     nisa_data = []
     if selected_family:
         for member in selected_family.members:
-            usages = NISAUsage.query.filter_by(member_id=member.id).order_by(NISAUsage.year).all()
-            summary = calculate_nisa_summary(member.id, usages)
+            summary = calculate_nisa_from_holdings(member)
             nisa_data.append({
                 'member': member,
                 'summary': summary,
-                'usages': usages,
             })
 
     return render_template('nisa.html', families=families,
                            selected_family=selected_family, nisa_data=nisa_data)
 
 
-@app.route('/nisa/update', methods=['POST'])
-def nisa_update():
-    member_id = request.form.get('member_id', type=int)
-    year = request.form.get('year', type=int)
-    tsumitate = request.form.get('tsumitate_used', type=float, default=0)
-    growth = request.form.get('growth_used', type=float, default=0)
-
-    if not member_id or not year:
-        flash('メンバーと年度を選択してください', 'error')
-        return redirect(url_for('nisa'))
-
-    usage = NISAUsage.query.filter_by(member_id=member_id, year=year).first()
-    if not usage:
-        usage = NISAUsage(member_id=member_id, year=year)
-        db.session.add(usage)
-
-    usage.tsumitate_used = tsumitate
-    usage.growth_used = growth
-    usage.total_holding = tsumitate + growth
-
-    db.session.commit()
-    flash(f'{year}年のNISA利用状況を更新しました', 'success')
-    return redirect(url_for('nisa'))
-
-
 # ── API ───────────────────────────────────────
 @app.route('/api/asset_allocation/<int:family_id>')
 def api_asset_allocation(family_id):
     family = Family.query.get_or_404(family_id)
-    all_holdings = []
-    for member in family.members:
-        for account in member.accounts:
-            all_holdings.extend(account.holdings)
+    all_holdings = _get_family_holdings(family)
 
     if not all_holdings:
         return jsonify({'error': 'No holdings found'})
 
     asset = calculate_asset_allocation(all_holdings)
     broker = calculate_broker_allocation(all_holdings)
-    currency = calculate_currency_allocation(all_holdings)
 
     return jsonify({
         'asset': {
@@ -434,11 +427,6 @@ def api_asset_allocation(family_id):
             'labels': list(broker['by_broker'].keys()),
             'values': [b['value'] for b in broker['by_broker'].values()],
             'percents': [b['percent'] for b in broker['by_broker'].values()],
-        },
-        'currency': {
-            'labels': list(currency['by_currency'].keys()),
-            'values': [c['value'] for c in currency['by_currency'].values()],
-            'percents': [c['percent'] for c in currency['by_currency'].values()],
         },
         'total_value': asset['total_value'],
     })

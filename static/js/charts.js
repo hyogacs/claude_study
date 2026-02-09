@@ -1,8 +1,10 @@
-/* チャート関連のユーティリティ */
+/* Chart.js utilities - Apple style with percentage labels */
+
+Chart.register(ChartDataLabels);
 
 const CHART_COLORS = [
-    '#0d6efd', '#198754', '#dc3545', '#ffc107', '#0dcaf0',
-    '#6f42c1', '#fd7e14', '#20c997', '#d63384', '#6c757d',
+    '#007aff', '#34c759', '#ff9500', '#ff3b30', '#5ac8fa',
+    '#af52de', '#ff2d55', '#ffcc00', '#64d2ff', '#86868b',
 ];
 
 function formatYenShort(val) {
@@ -15,6 +17,8 @@ function createPieChart(canvasId, labels, values, title) {
     const ctx = document.getElementById(canvasId);
     if (!ctx) return null;
 
+    const total = values.reduce((a, b) => a + b, 0);
+
     return new Chart(ctx, {
         type: 'doughnut',
         data: {
@@ -22,27 +26,42 @@ function createPieChart(canvasId, labels, values, title) {
             datasets: [{
                 data: values,
                 backgroundColor: CHART_COLORS.slice(0, labels.length),
-                borderWidth: 2,
-                borderColor: '#fff',
+                borderWidth: 3,
+                borderColor: '#ffffff',
+                hoverBorderWidth: 0,
+                hoverOffset: 6,
             }],
         },
         options: {
             responsive: true,
+            cutout: '55%',
+            layout: { padding: 30 },
             plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: {
-                        padding: 15,
-                        font: { size: 11 },
-                    },
-                },
+                legend: { display: false },
                 tooltip: {
+                    backgroundColor: 'rgba(0,0,0,0.78)',
+                    titleFont: { size: 12, weight: '600' },
+                    bodyFont: { size: 12 },
+                    cornerRadius: 10,
+                    padding: 12,
                     callbacks: {
                         label: function(ctx) {
-                            const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
                             const pct = ((ctx.raw / total) * 100).toFixed(1);
                             return ctx.label + ': ' + formatYenShort(ctx.raw) + ' (' + pct + '%)';
                         },
+                    },
+                },
+                datalabels: {
+                    color: '#1d1d1f',
+                    font: { size: 11, weight: '600', family: '-apple-system, sans-serif' },
+                    anchor: 'end',
+                    align: 'end',
+                    offset: 4,
+                    formatter: function(value, ctx) {
+                        const pct = ((value / total) * 100).toFixed(1);
+                        if (pct < 3) return '';
+                        const label = ctx.chart.data.labels[ctx.dataIndex];
+                        return label + '\n' + pct + '%';
                     },
                 },
             },
