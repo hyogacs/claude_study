@@ -4,68 +4,91 @@
 {% block content %}
 <div class="page-header">
     <h1 class="page-title">資産一覧</h1>
-    <form style="display: flex; gap: 10px;" method="GET">
-        <select class="family-select" name="family_id" onchange="this.form.submit()">
-            <option value="">全家族</option>
-            {% for f in families %}
-            <option value="{{ f.id }}" {% if selected_family_id == f.id %}selected{% endif %}>
-                {{ f.name }}
-            </option>
-            {% endfor %}
-        </select>
-        <select class="family-select" name="member_id" onchange="this.form.submit()">
-            <option value="">全メンバー</option>
-            {% for m in members %}
-            <option value="{{ m.id }}" {% if selected_member_id == m.id %}selected{% endif %}>
-                {{ m.name }}
-            </option>
-            {% endfor %}
-        </select>
-    </form>
+    <div style="display: flex; gap: 10px; align-items: center;">
+        <form style="display: flex; gap: 10px;" method="GET">
+            <select class="family-select" name="family_id" onchange="this.form.submit()">
+                <option value="">全家族</option>
+                {% for f in families %}
+                <option value="{{ f.id }}" {% if selected_family_id == f.id %}selected{% endif %}>
+                    {{ f.name }}
+                </option>
+                {% endfor %}
+            </select>
+            <select class="family-select" name="member_id" onchange="this.form.submit()">
+                <option value="">全メンバー</option>
+                {% for m in members %}
+                <option value="{{ m.id }}" {% if selected_member_id == m.id %}selected{% endif %}>
+                    {{ m.name }}
+                </option>
+                {% endfor %}
+            </select>
+        </form>
+        <button class="btn-apple btn-apple-secondary btn-apple-sm" onclick="document.getElementById('addHoldingModal').style.display='flex'">
+            <i class="bi bi-plus-circle"></i> 手動追加
+        </button>
+        <a href="/export/holdings{% if selected_family_id %}?family_id={{ selected_family_id }}{% endif %}" class="btn-apple btn-apple-secondary btn-apple-sm">
+            <i class="bi bi-download"></i> CSV出力
+        </a>
+    </div>
+</div>
+
+<!-- 検索 -->
+<div style="margin-bottom: 16px;">
+    <input type="text" class="form-control" id="searchInput" placeholder="銘柄名・コードで検索..."
+           oninput="filterTable()" style="max-width: 360px;">
 </div>
 
 {% if holdings %}
 <div class="card-apple">
     <div class="card-apple-body" style="padding: 0; overflow-x: auto;">
-        <table class="table-apple">
+        <table class="table-apple" id="holdingsTable">
             <thead>
                 <tr>
-                    <th>証券会社</th>
-                    <th>口座</th>
-                    <th>銘柄コード</th>
-                    <th>銘柄名</th>
-                    <th>資産クラス</th>
-                    <th style="text-align: right;">数量</th>
+                    <th class="sortable" data-col="0">証券会社</th>
+                    <th class="sortable" data-col="1">口座</th>
+                    <th>コード</th>
+                    <th class="sortable" data-col="3">銘柄名</th>
+                    <th class="sortable" data-col="4">資産クラス</th>
+                    <th class="sortable" data-col="5" style="text-align: right;">数量</th>
                     <th style="text-align: right;">取得単価</th>
                     <th style="text-align: right;">現在値</th>
-                    <th style="text-align: right;">評価額</th>
-                    <th style="text-align: right;">損益</th>
-                    <th style="text-align: right;">損益率</th>
+                    <th class="sortable" data-col="8" style="text-align: right;">評価額 <i class="bi bi-arrow-down-up" style="font-size:0.7em;"></i></th>
+                    <th class="sortable" data-col="9" style="text-align: right;">損益 <i class="bi bi-arrow-down-up" style="font-size:0.7em;"></i></th>
+                    <th class="sortable" data-col="10" style="text-align: right;">損益率 <i class="bi bi-arrow-down-up" style="font-size:0.7em;"></i></th>
                     <th>NISA</th>
+                    <th style="width: 80px;"></th>
                 </tr>
             </thead>
-            <tbody>
-                {% set ns = namespace(total_value=0, total_pnl=0) %}
+            <tbody id="holdingsBody">
                 {% for h in holdings %}
-                {% set ns.total_value = ns.total_value + h.market_value %}
-                {% set ns.total_pnl = ns.total_pnl + h.unrealized_pnl %}
-                <tr>
+                <tr data-search="{{ h.name }} {{ h.symbol }} {{ h.asset_class }} {{ h.account.broker }}">
                     <td><span class="badge-apple badge-{{ 'sbi' if h.account.broker == 'SBI' else 'moomoo' }}">{{ h.account.broker }}</span></td>
                     <td>{{ h.account.account_type }}</td>
                     <td style="font-family: monospace; font-size: 0.82rem;">{{ h.symbol }}</td>
-                    <td>{{ h.name }}</td>
+                    <td><a href="/holding/{{ h.id }}" style="color: var(--accent); text-decoration: none; font-weight: 500;">{{ h.name }}</a></td>
                     <td><span class="badge-apple badge-asset">{{ h.asset_class }}</span></td>
-                    <td style="text-align: right;">{{ '{:,.2f}'.format(h.quantity) }}</td>
+                    <td style="text-align: right;" data-sort="{{ h.quantity }}">{{ '{:,.2f}'.format(h.quantity) }}</td>
                     <td style="text-align: right;">{{ h.avg_cost | currency(h.currency) }}</td>
                     <td style="text-align: right;">{{ h.current_price | currency(h.currency) }}</td>
-                    <td style="text-align: right; font-weight: 600;">{{ h.market_value | currency(h.currency) }}</td>
-                    <td style="text-align: right;" class="{{ 'text-positive' if h.unrealized_pnl >= 0 else 'text-negative' }}">
+                    <td style="text-align: right; font-weight: 600;" data-sort="{{ convert_to_jpy(h.market_value, h.currency, rates) }}">{{ h.market_value | currency(h.currency) }}</td>
+                    <td style="text-align: right;" class="{{ 'text-positive' if h.unrealized_pnl >= 0 else 'text-negative' }}" data-sort="{{ convert_to_jpy(h.unrealized_pnl, h.currency, rates) }}">
                         {{ h.unrealized_pnl | currency(h.currency) }}
                     </td>
-                    <td style="text-align: right;" class="{{ 'text-positive' if h.pnl_percent >= 0 else 'text-negative' }}">
+                    <td style="text-align: right;" class="{{ 'text-positive' if h.pnl_percent >= 0 else 'text-negative' }}" data-sort="{{ h.pnl_percent }}">
                         {{ '%.2f' | format(h.pnl_percent) }}%
                     </td>
                     <td>{% if h.is_nisa %}<span class="badge-apple badge-nisa">NISA</span>{% endif %}</td>
+                    <td style="text-align: right;">
+                        <button class="btn-apple btn-apple-secondary btn-apple-sm" style="padding: 2px 6px; font-size: 0.72rem;"
+                                onclick="openEditModal({{ h.id }}, '{{ h.name }}', '{{ h.symbol }}', '{{ h.asset_class }}', {{ h.quantity }}, {{ h.avg_cost }}, {{ h.current_price }}, '{{ h.currency }}')">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <form method="POST" action="/holding/{{ h.id }}/delete" style="display: inline;" onsubmit="return confirm('「{{ h.name }}」を削除しますか？')">
+                            <button class="btn-apple btn-apple-secondary btn-apple-sm" style="padding: 2px 6px; font-size: 0.72rem; color: var(--red);">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -81,7 +104,7 @@
                     <td style="text-align: right; font-weight: 700;" class="{{ 'text-positive' if ns_jpy.total_pnl >= 0 else 'text-negative' }}">
                         {{ ns_jpy.total_pnl | currency }}
                     </td>
-                    <td colspan="2"></td>
+                    <td colspan="3"></td>
                 </tr>
             </tfoot>
         </table>
@@ -92,4 +115,167 @@
     資産データがありません。<a href="/import">CSV導入</a>ページからデータをインポートしてください。
 </div>
 {% endif %}
+
+<!-- 手動追加モーダル -->
+<div id="addHoldingModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:100; justify-content:center; align-items:center;">
+    <div class="card-apple" style="width: 480px; max-height: 90vh; overflow-y: auto;">
+        <div class="card-apple-header" style="display:flex; justify-content:space-between;">
+            <span>保有資産を手動追加</span>
+            <button onclick="this.closest('#addHoldingModal').style.display='none'" style="background:none;border:none;font-size:1.2rem;cursor:pointer;">&times;</button>
+        </div>
+        <div class="card-apple-body">
+            <form method="POST" action="/holding/add">
+                <div style="margin-bottom: 12px;">
+                    <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">口座</label>
+                    <select class="form-select" name="account_id" required>
+                        {% for a in accounts %}
+                        <option value="{{ a.id }}">{{ a.member.name }} - {{ a.account_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="grid-2" style="margin-bottom: 12px;">
+                    <div>
+                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">銘柄名</label>
+                        <input type="text" class="form-control" name="name" required>
+                    </div>
+                    <div>
+                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">銘柄コード</label>
+                        <input type="text" class="form-control" name="symbol">
+                    </div>
+                </div>
+                <div class="grid-2" style="margin-bottom: 12px;">
+                    <div>
+                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">資産クラス</label>
+                        <select class="form-select" name="asset_class">
+                            <option>日本株式</option><option>米国株式</option><option>投資信託</option>
+                            <option>国内債券</option><option>外国株式</option><option>貴金属</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">通貨</label>
+                        <select class="form-select" name="currency">
+                            <option>JPY</option><option>USD</option><option>HKD</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid-3" style="margin-bottom: 12px;">
+                    <div>
+                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">数量</label>
+                        <input type="number" class="form-control" name="quantity" step="0.01" required>
+                    </div>
+                    <div>
+                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">取得単価</label>
+                        <input type="number" class="form-control" name="avg_cost" step="0.0001" required>
+                    </div>
+                    <div>
+                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">現在値</label>
+                        <input type="number" class="form-control" name="current_price" step="0.0001" required>
+                    </div>
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display:flex;align-items:center;gap:6px;font-size:0.88rem;">
+                        <input type="checkbox" name="is_nisa" value="1"> NISA口座
+                    </label>
+                </div>
+                <button type="submit" class="btn-apple btn-apple-primary" style="width:100%;">追加</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 編集モーダル -->
+<div id="editHoldingModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:100; justify-content:center; align-items:center;">
+    <div class="card-apple" style="width: 480px;">
+        <div class="card-apple-header" style="display:flex; justify-content:space-between;">
+            <span>保有資産を編集</span>
+            <button onclick="this.closest('#editHoldingModal').style.display='none'" style="background:none;border:none;font-size:1.2rem;cursor:pointer;">&times;</button>
+        </div>
+        <div class="card-apple-body">
+            <form method="POST" id="editForm">
+                <div class="grid-2" style="margin-bottom: 12px;">
+                    <div>
+                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">銘柄名</label>
+                        <input type="text" class="form-control" name="name" id="editName" required>
+                    </div>
+                    <div>
+                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">銘柄コード</label>
+                        <input type="text" class="form-control" name="symbol" id="editSymbol">
+                    </div>
+                </div>
+                <div class="grid-2" style="margin-bottom: 12px;">
+                    <div>
+                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">資産クラス</label>
+                        <input type="text" class="form-control" name="asset_class" id="editAssetClass">
+                    </div>
+                    <div>
+                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">通貨</label>
+                        <input type="text" class="form-control" name="currency" id="editCurrency">
+                    </div>
+                </div>
+                <div class="grid-3" style="margin-bottom: 16px;">
+                    <div>
+                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">数量</label>
+                        <input type="number" class="form-control" name="quantity" id="editQuantity" step="0.01">
+                    </div>
+                    <div>
+                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">取得単価</label>
+                        <input type="number" class="form-control" name="avg_cost" id="editAvgCost" step="0.0001">
+                    </div>
+                    <div>
+                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">現在値</label>
+                        <input type="number" class="form-control" name="current_price" id="editCurrentPrice" step="0.0001">
+                    </div>
+                </div>
+                <button type="submit" class="btn-apple btn-apple-primary" style="width:100%;">更新</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterTable() {
+    const q = document.getElementById('searchInput').value.toLowerCase();
+    document.querySelectorAll('#holdingsBody tr').forEach(tr => {
+        const text = (tr.dataset.search || '').toLowerCase();
+        tr.style.display = text.includes(q) ? '' : 'none';
+    });
+}
+
+function openEditModal(id, name, symbol, assetClass, qty, avgCost, price, currency) {
+    document.getElementById('editForm').action = '/holding/' + id + '/edit';
+    document.getElementById('editName').value = name;
+    document.getElementById('editSymbol').value = symbol;
+    document.getElementById('editAssetClass').value = assetClass;
+    document.getElementById('editQuantity').value = qty;
+    document.getElementById('editAvgCost').value = avgCost;
+    document.getElementById('editCurrentPrice').value = price;
+    document.getElementById('editCurrency').value = currency;
+    document.getElementById('editHoldingModal').style.display = 'flex';
+}
+
+// Sort functionality
+let sortDir = {};
+document.querySelectorAll('.sortable').forEach(th => {
+    th.style.cursor = 'pointer';
+    th.addEventListener('click', function() {
+        const col = parseInt(this.dataset.col);
+        sortDir[col] = !(sortDir[col] || false);
+        const tbody = document.getElementById('holdingsBody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        rows.sort((a, b) => {
+            const aCell = a.cells[col];
+            const bCell = b.cells[col];
+            let aVal = aCell.dataset.sort !== undefined ? parseFloat(aCell.dataset.sort) : aCell.textContent.trim();
+            let bVal = bCell.dataset.sort !== undefined ? parseFloat(bCell.dataset.sort) : bCell.textContent.trim();
+            if (typeof aVal === 'number' && typeof bVal === 'number') {
+                return sortDir[col] ? aVal - bVal : bVal - aVal;
+            }
+            return sortDir[col] ? String(aVal).localeCompare(String(bVal)) : String(bVal).localeCompare(String(aVal));
+        });
+        rows.forEach(r => tbody.appendChild(r));
+    });
+});
+</script>
 {% endblock %}

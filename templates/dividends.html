@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}配当金 - 投資管理システム{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">配当金</h1>
+    <div style="display: flex; gap: 10px; align-items: center;">
+        <select class="family-select" onchange="location.href='/dividends?year={{ current_year }}&family_id='+this.value">
+            <option value="">全家族</option>
+            {% for f in families %}
+            <option value="{{ f.id }}" {% if selected_family_id == f.id %}selected{% endif %}>{{ f.name }}</option>
+            {% endfor %}
+        </select>
+        <select class="family-select" onchange="location.href='/dividends?year='+this.value">
+            {% for y in available_years %}
+            <option value="{{ y }}" {% if current_year == y %}selected{% endif %}>{{ y }}年</option>
+            {% endfor %}
+        </select>
+        <button class="btn-apple btn-apple-secondary btn-apple-sm" onclick="document.getElementById('addDividendModal').style.display='flex'">
+            <i class="bi bi-plus-circle"></i> 配当金追加
+        </button>
+        <a href="/export/dividends?year={{ current_year }}" class="btn-apple btn-apple-secondary btn-apple-sm">
+            <i class="bi bi-download"></i> CSV出力
+        </a>
+    </div>
+</div>
+
+<!-- 年間サマリー -->
+<div class="grid-3" style="margin-bottom: 24px;">
+    <div class="stat-card">
+        <div class="stat-label">{{ current_year }}年 配当金合計</div>
+        <div class="stat-value" style="font-size: 1.2rem;">{{ total_amount | currency }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">源泉徴収税</div>
+        <div class="stat-value negative" style="font-size: 1.2rem;">{{ total_tax | currency }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">手取額</div>
+        <div class="stat-value positive" style="font-size: 1.2rem;">{{ total_net | currency }}</div>
+    </div>
+</div>
+
+{% if dividends %}
+<div class="card-apple">
+    <div class="card-apple-body" style="padding: 0; overflow-x: auto;">
+        <table class="table-apple">
+            <thead>
+                <tr>
+                    <th>支払日</th>
+                    <th>メンバー</th>
+                    <th>証券会社</th>
+                    <th>銘柄名</th>
+                    <th style="text-align: right;">配当金額</th>
+                    <th style="text-align: right;">税額</th>
+                    <th style="text-align: right;">手取額</th>
+                    <th>NISA</th>
+                    <th style="width: 40px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in dividends %}
+                <tr>
+                    <td>{{ d.payment_date.strftime('%Y-%m-%d') }}</td>
+                    <td>{{ d.account.member.name }}</td>
+                    <td><span class="badge-apple badge-{{ 'sbi' if d.account.broker == 'SBI' else 'moomoo' }}">{{ d.account.broker }}</span></td>
+                    <td>{{ d.name }}</td>
+                    <td style="text-align: right;">{{ d.amount | currency(d.currency) }}</td>
+                    <td style="text-align: right; color: var(--red);">{{ d.tax_amount | currency(d.currency) }}</td>
+                    <td style="text-align: right; font-weight: 600;">{{ d.net_amount | currency(d.currency) }}</td>
+                    <td>{% if d.is_nisa %}<span class="badge-apple badge-nisa">NISA</span>{% endif %}</td>
+                    <td>
+                        <form method="POST" action="/dividend/{{ d.id }}/delete" style="display:inline;" onsubmit="return confirm('削除しますか？')">
+                            <button class="btn-apple btn-apple-secondary btn-apple-sm" style="padding:2px 6px;font-size:0.72rem;color:var(--red);"><i class="bi bi-trash"></i></button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="alert-apple alert-info">
+    {{ current_year }}年の配当金データがありません。「配当金追加」ボタンから登録してください。
+</div>
+{% endif %}
+
+<!-- 追加モーダル -->
+<div id="addDividendModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:100; justify-content:center; align-items:center;">
+    <div class="card-apple" style="width: 480px;">
+        <div class="card-apple-header" style="display:flex; justify-content:space-between;">
+            <span>配当金を追加</span>
+            <button onclick="this.closest('#addDividendModal').style.display='none'" style="background:none;border:none;font-size:1.2rem;cursor:pointer;">&times;</button>
+        </div>
+        <div class="card-apple-body">
+            <form method="POST" action="/dividend/add">
+                <div style="margin-bottom: 12px;">
+                    <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">口座</label>
+                    <select class="form-select" name="account_id" required>
+                        {% for a in accounts %}
+                        <option value="{{ a.id }}">{{ a.member.name }} - {{ a.account_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="grid-2" style="margin-bottom: 12px;">
+                    <div>
+                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">銘柄名</label>
+                        <input type="text" class="form-control" name="name" required>
+                    </div>
+                    <div>
+                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">銘柄コード</label>
+                        <input type="text" class="form-control" name="symbol">
+                    </div>
+                </div>
+                <div class="grid-3" style="margin-bottom: 12px;">
+                    <div>
+                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">配当金額</label>
+                        <input type="number" class="form-control" name="amount" step="0.01" required>
+                    </div>
+                    <div>
+                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">税額</label>
+                        <input type="number" class="form-control" name="tax_amount" step="0.01" value="0">
+                    </div>
+                    <div>
+                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">通貨</label>
+                        <select class="form-select" name="currency">
+                            <option>JPY</option><option>USD</option><option>HKD</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid-2" style="margin-bottom: 16px;">
+                    <div>
+                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">支払日</label>
+                        <input type="date" class="form-control" name="payment_date" required>
+                    </div>
+                    <div style="display:flex;align-items:end;padding-bottom:4px;">
+                        <label style="display:flex;align-items:center;gap:6px;font-size:0.88rem;">
+                            <input type="checkbox" name="is_nisa" value="1"> NISA（非課税）
+                        </label>
+                    </div>
+                </div>
+                <button type="submit" class="btn-apple btn-apple-primary" style="width:100%;">追加</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -114,3 +114,63 @@ class NISAUsage(db.Model):
     @property
     def lifetime_remaining(self):
         return max(0, self.TOTAL_LIFETIME_LIMIT - self.total_holding)
+
+
+class PortfolioSnapshot(db.Model):
+    """資産推移スナップショット"""
+    id = db.Column(db.Integer, primary_key=True)
+    family_id = db.Column(db.Integer, db.ForeignKey('family.id'), nullable=False)
+    snapshot_date = db.Column(db.Date, nullable=False)
+    total_value = db.Column(db.Float, default=0)
+    total_cost = db.Column(db.Float, default=0)
+    total_pnl = db.Column(db.Float, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    family = db.relationship('Family', backref='snapshots')
+
+
+class Dividend(db.Model):
+    """配当金記録"""
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=False)
+    symbol = db.Column(db.String(20))
+    name = db.Column(db.String(200), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    tax_amount = db.Column(db.Float, default=0)
+    currency = db.Column(db.String(10), default='JPY')
+    payment_date = db.Column(db.Date, nullable=False)
+    is_nisa = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    account = db.relationship('Account', backref='dividends')
+
+    @property
+    def net_amount(self):
+        return self.amount - self.tax_amount
+
+
+class RealizedGain(db.Model):
+    """実現損益記録"""
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=False)
+    symbol = db.Column(db.String(20))
+    name = db.Column(db.String(200), nullable=False)
+    quantity = db.Column(db.Float, nullable=False)
+    buy_price = db.Column(db.Float, nullable=False)
+    sell_price = db.Column(db.Float, nullable=False)
+    currency = db.Column(db.String(10), default='JPY')
+    trade_date = db.Column(db.Date, nullable=False)
+    fees = db.Column(db.Float, default=0)
+    is_nisa = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    account = db.relationship('Account', backref='realized_gains')
+
+    @property
+    def realized_pnl(self):
+        return (self.sell_price - self.buy_price) * self.quantity - self.fees
+
+    @property
+    def cost_basis(self):
+        return self.buy_price * self.quantity
+
+    @property
+    def proceeds(self):
+        return self.sell_price * self.quantity

@@ -18,20 +18,27 @@
             <a href="/" class="sidebar-link {% if request.endpoint == 'dashboard' %}active{% endif %}">
                 <i class="bi bi-grid-1x2"></i><span>ダッシュボード</span>
             </a>
+            <a href="/assets" class="sidebar-link {% if request.endpoint in ('assets', 'holding_detail') %}active{% endif %}">
+                <i class="bi bi-wallet2"></i><span>資産一覧</span>
+            </a>
+            <a href="/dividends" class="sidebar-link {% if request.endpoint == 'dividends' %}active{% endif %}">
+                <i class="bi bi-cash-coin"></i><span>配当金</span>
+            </a>
+            <a href="/realized-gains" class="sidebar-link {% if request.endpoint == 'realized_gains' %}active{% endif %}">
+                <i class="bi bi-arrow-left-right"></i><span>実現損益</span>
+            </a>
+            <a href="/nisa" class="sidebar-link {% if request.endpoint == 'nisa' %}active{% endif %}">
+                <i class="bi bi-shield-check"></i><span>NISA管理</span>
+            </a>
+            <a href="/simulation" class="sidebar-link {% if request.endpoint == 'simulation' %}active{% endif %}">
+                <i class="bi bi-calculator"></i><span>複利シミュレーション</span>
+            </a>
+            <div style="border-top: 1px solid var(--border); margin: 8px 12px;"></div>
             <a href="/family" class="sidebar-link {% if request.endpoint == 'family_list' %}active{% endif %}">
                 <i class="bi bi-people"></i><span>家族管理</span>
             </a>
             <a href="/import" class="sidebar-link {% if request.endpoint == 'import_page' %}active{% endif %}">
                 <i class="bi bi-arrow-up-circle"></i><span>CSV導入</span>
-            </a>
-            <a href="/assets" class="sidebar-link {% if request.endpoint == 'assets' %}active{% endif %}">
-                <i class="bi bi-wallet2"></i><span>資産一覧</span>
-            </a>
-            <a href="/simulation" class="sidebar-link {% if request.endpoint == 'simulation' %}active{% endif %}">
-                <i class="bi bi-calculator"></i><span>複利シミュレーション</span>
-            </a>
-            <a href="/nisa" class="sidebar-link {% if request.endpoint == 'nisa' %}active{% endif %}">
-                <i class="bi bi-shield-check"></i><span>NISA管理</span>
             </a>
         </nav>
     </aside>

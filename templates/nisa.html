@@ -4,15 +4,22 @@
 {% block content %}
 <div class="page-header">
     <h1 class="page-title">NISA管理</h1>
-    {% if families %}
-    <select class="family-select" onchange="location.href='/nisa?family_id='+this.value">
-        {% for f in families %}
-        <option value="{{ f.id }}" {% if selected_family and f.id == selected_family.id %}selected{% endif %}>
-            {{ f.name }}
-        </option>
-        {% endfor %}
-    </select>
-    {% endif %}
+    <div style="display: flex; align-items: center; gap: 12px;">
+        {% if families %}
+        <select class="family-select" onchange="location.href='/nisa?family_id='+this.value+'&year={{ current_year }}'">
+            {% for f in families %}
+            <option value="{{ f.id }}" {% if selected_family and f.id == selected_family.id %}selected{% endif %}>
+                {{ f.name }}
+            </option>
+            {% endfor %}
+        </select>
+        <select class="family-select" onchange="location.href='/nisa?family_id={{ selected_family.id if selected_family else '' }}&year='+this.value">
+            {% for y in range(2024, 2035) %}
+            <option value="{{ y }}" {% if y == current_year %}selected{% endif %}>{{ y }}年</option>
+            {% endfor %}
+        </select>
+        {% endif %}
+    </div>
 </div>
 
 {% if not families %}
@@ -76,6 +83,68 @@
                 <div class="stat-value" style="font-size: 1.2rem;">{{ item.summary.lifetime_remaining | currency }}</div>
                 <div class="stat-sub">成長枠残り: {{ item.summary.growth_lifetime_remaining | currency }}</div>
             </div>
+        </div>
+
+        <!-- 年間枠利用状況 -->
+        <div style="margin-bottom: 20px;">
+            <h6 style="font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px;">
+                {{ current_year }}年 年間枠利用状況
+            </h6>
+            {% set yu = item.yearly_usage %}
+            <div class="grid-2" style="margin-bottom: 16px;">
+                <div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                        <span style="font-size: 0.82rem; font-weight: 600;">つみたて投資枠</span>
+                        <span style="font-size: 0.82rem; color: var(--text-secondary);">
+                            {{ (yu.tsumitate_used if yu else 0) | currency }} / ¥1,200,000
+                        </span>
+                    </div>
+                    {% set t_pct = ((yu.tsumitate_used / 1200000 * 100) if yu and yu.tsumitate_used else 0) %}
+                    <div class="progress-apple">
+                        <div class="progress-apple-bar blue" style="width: {{ t_pct | round(1) }}%;"></div>
+                    </div>
+                </div>
+                <div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                        <span style="font-size: 0.82rem; font-weight: 600;">成長投資枠</span>
+                        <span style="font-size: 0.82rem; color: var(--text-secondary);">
+                            {{ (yu.growth_used if yu else 0) | currency }} / ¥2,400,000
+                        </span>
+                    </div>
+                    {% set g_pct = ((yu.growth_used / 2400000 * 100) if yu and yu.growth_used else 0) %}
+                    <div class="progress-apple">
+                        <div class="progress-apple-bar green" style="width: {{ g_pct | round(1) }}%;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 年間枠手動入力 -->
+            <details style="margin-top: 12px;">
+                <summary style="font-size: 0.82rem; color: var(--accent); cursor: pointer; font-weight: 500;">
+                    <i class="bi bi-pencil"></i> {{ current_year }}年の利用額を手動入力
+                </summary>
+                <form method="POST" action="/nisa/update_year" style="margin-top: 12px; padding: 16px; background: rgba(0,0,0,0.02); border-radius: var(--radius-sm);">
+                    <input type="hidden" name="member_id" value="{{ item.member.id }}">
+                    <input type="hidden" name="year" value="{{ current_year }}">
+                    <div class="grid-2" style="margin-bottom: 12px;">
+                        <div>
+                            <label style="display: block; font-size: 0.78rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px;">つみたて投資枠利用額</label>
+                            <input type="number" class="form-control" name="tsumitate_used"
+                                   value="{{ yu.tsumitate_used | int if yu and yu.tsumitate_used else 0 }}"
+                                   step="1" min="0" max="1200000" style="width: 100%;">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.78rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px;">成長投資枠利用額</label>
+                            <input type="number" class="form-control" name="growth_used"
+                                   value="{{ yu.growth_used | int if yu and yu.growth_used else 0 }}"
+                                   step="1" min="0" max="2400000" style="width: 100%;">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-apple btn-apple-primary btn-apple-sm">
+                        <i class="bi bi-check2"></i> 更新
+                    </button>
+                </form>
+            </details>
         </div>
 
         <!-- 生涯非課税枠プログレスバー -->

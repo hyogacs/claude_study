@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}{{ holding.name }} - 投資管理システム{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title" style="font-size: 1.2rem;">
+        <a href="/assets" style="color: var(--text-secondary); text-decoration: none; margin-right: 8px;">
+            <i class="bi bi-arrow-left"></i>
+        </a>
+        {{ holding.name }}
+    </h1>
+    <span class="badge-apple badge-asset">{{ holding.asset_class }}</span>
+</div>
+
+<!-- 基本情報 -->
+<div class="grid-4" style="margin-bottom: 24px;">
+    <div class="stat-card">
+        <div class="stat-label">評価額</div>
+        <div class="stat-value" style="font-size: 1.2rem;">{{ holding.market_value | currency(holding.currency) }}</div>
+        {% if holding.currency != 'JPY' %}
+        <div class="stat-sub">JPY: {{ convert_to_jpy(holding.market_value, holding.currency, rates) | currency }}</div>
+        {% endif %}
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">含み損益</div>
+        <div class="stat-value {{ 'positive' if holding.unrealized_pnl >= 0 else 'negative' }}" style="font-size: 1.2rem;">
+            {{ holding.unrealized_pnl | currency(holding.currency) }}
+        </div>
+        <div class="stat-sub">{{ '%.2f' | format(holding.pnl_percent) }}%</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">取得金額</div>
+        <div class="stat-value" style="font-size: 1.2rem;">{{ holding.cost_basis | currency(holding.currency) }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">保有数量</div>
+        <div class="stat-value" style="font-size: 1.2rem;">{{ '{:,.2f}'.format(holding.quantity) }}</div>
+    </div>
+</div>
+
+<div class="grid-2">
+    <!-- 詳細情報 -->
+    <div class="card-apple" style="margin-bottom: 20px;">
+        <div class="card-apple-header">詳細情報</div>
+        <div class="card-apple-body" style="padding: 0;">
+            <table class="table-apple">
+                <tbody>
+                    <tr><td style="font-weight:600;">銘柄コード</td><td style="font-family:monospace;">{{ holding.symbol }}</td></tr>
+                    <tr><td style="font-weight:600;">証券会社</td><td>{{ holding.account.broker }}</td></tr>
+                    <tr><td style="font-weight:600;">口座</td><td>{{ holding.account.account_name }}</td></tr>
+                    <tr><td style="font-weight:600;">メンバー</td><td>{{ holding.account.member.name }}</td></tr>
+                    <tr><td style="font-weight:600;">通貨</td><td>{{ holding.currency }}</td></tr>
+                    <tr><td style="font-weight:600;">取得単価</td><td>{{ holding.avg_cost | currency(holding.currency) }}</td></tr>
+                    <tr><td style="font-weight:600;">現在値</td><td>{{ holding.current_price | currency(holding.currency) }}</td></tr>
+                    <tr><td style="font-weight:600;">NISA</td><td>{% if holding.is_nisa %}<span class="badge-apple badge-nisa">NISA</span>{% else %}対象外{% endif %}</td></tr>
+                    <tr><td style="font-weight:600;">最終更新</td><td>{{ holding.updated_at.strftime('%Y-%m-%d %H:%M') if holding.updated_at else '-' }}</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div>
+        <!-- 取引履歴 -->
+        <div class="card-apple" style="margin-bottom: 20px;">
+            <div class="card-apple-header">取引履歴</div>
+            <div class="card-apple-body" style="padding: 0;">
+                {% if transactions %}
+                <table class="table-apple">
+                    <thead><tr><th>日付</th><th>種別</th><th style="text-align:right;">数量</th><th style="text-align:right;">単価</th><th style="text-align:right;">金額</th></tr></thead>
+                    <tbody>
+                        {% for tx in transactions %}
+                        <tr>
+                            <td>{{ tx.trade_date.strftime('%Y-%m-%d') }}</td>
+                            <td><span class="badge-apple badge-asset">{{ tx.type }}</span></td>
+                            <td style="text-align:right;">{{ '{:,.0f}'.format(tx.quantity) }}</td>
+                            <td style="text-align:right;">{{ tx.price | currency }}</td>
+                            <td style="text-align:right;">{{ tx.amount | currency }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div style="padding: 20px; text-align: center; color: var(--text-secondary); font-size: 0.88rem;">取引データなし</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 配当金 -->
+        <div class="card-apple">
+            <div class="card-apple-header">配当金履歴</div>
+            <div class="card-apple-body" style="padding: 0;">
+                {% if dividends %}
+                <table class="table-apple">
+                    <thead><tr><th>支払日</th><th style="text-align:right;">配当金</th><th style="text-align:right;">税額</th><th style="text-align:right;">手取額</th></tr></thead>
+                    <tbody>
+                        {% for d in dividends %}
+                        <tr>
+                            <td>{{ d.payment_date.strftime('%Y-%m-%d') }}</td>
+                            <td style="text-align:right;">{{ d.amount | currency(d.currency) }}</td>
+                            <td style="text-align:right;">{{ d.tax_amount | currency(d.currency) }}</td>
+                            <td style="text-align:right; font-weight: 600;">{{ d.net_amount | currency(d.currency) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div style="padding: 20px; text-align: center; color: var(--text-secondary); font-size: 0.88rem;">配当データなし</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

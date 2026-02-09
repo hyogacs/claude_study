@@ -12,50 +12,69 @@
 </div>
 {% else %}
 <div class="grid-2" style="grid-template-columns: 2fr 1fr;">
-    <div class="card-apple">
-        <div class="card-apple-header">CSVファイルをインポート</div>
-        <div class="card-apple-body">
-            <form method="POST" action="/import/upload" enctype="multipart/form-data">
-                <div style="margin-bottom: 16px;">
-                    <label style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">メンバー</label>
-                    <select class="form-select" name="member_id" required>
-                        <option value="">選択してください</option>
-                        {% for member in members %}
-                        <option value="{{ member.id }}">
-                            {{ member.family.name }} - {{ member.name }}（{{ member.relationship }}）
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
-
-                <div style="margin-bottom: 16px;">
-                    <label style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">証券会社</label>
-                    <select class="form-select" name="broker" required>
-                        <option value="SBI">SBI証券</option>
-                        <option value="moomoo">moomoo証券</option>
-                    </select>
-                </div>
-
-                <div style="margin-bottom: 16px;">
-                    <label style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">ファイル種別</label>
-                    <select class="form-select" name="file_type">
-                        <option value="holdings">保有資産一覧</option>
-                        <option value="transactions">取引履歴</option>
-                    </select>
-                </div>
-
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">CSVファイル</label>
-                    <input type="file" class="form-control" name="csv_file" accept=".csv" required>
-                    <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 4px;">
-                        CSV形式のファイルを選択してください（最大16MB）
+    <div>
+        <div class="card-apple">
+            <div class="card-apple-header">CSVファイルをインポート</div>
+            <div class="card-apple-body">
+                <form id="importForm" enctype="multipart/form-data">
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">メンバー</label>
+                        <select class="form-select" name="member_id" required style="width: 100%;">
+                            <option value="">選択してください</option>
+                            {% for member in members %}
+                            <option value="{{ member.id }}">
+                                {{ member.family.name }} - {{ member.name }}（{{ member.relationship }}）
+                            </option>
+                            {% endfor %}
+                        </select>
                     </div>
-                </div>
 
-                <button type="submit" class="btn-apple btn-apple-primary" style="width: 100%;">
-                    <i class="bi bi-arrow-up-circle"></i> インポート
-                </button>
-            </form>
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">証券会社</label>
+                        <select class="form-select" name="broker" required style="width: 100%;">
+                            <option value="SBI">SBI証券</option>
+                            <option value="moomoo">moomoo証券</option>
+                        </select>
+                    </div>
+
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">ファイル種別</label>
+                        <select class="form-select" name="file_type" style="width: 100%;">
+                            <option value="holdings">保有資産一覧</option>
+                            <option value="transactions">取引履歴</option>
+                        </select>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">CSVファイル</label>
+                        <input type="file" class="form-control" name="csv_file" accept=".csv" required style="width: 100%;">
+                        <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 4px;">
+                            CSV形式のファイルを選択してください（最大16MB）
+                        </div>
+                    </div>
+
+                    <button type="button" id="previewBtn" class="btn-apple btn-apple-secondary" style="width: 100%; margin-bottom: 10px;" onclick="previewCSV()">
+                        <i class="bi bi-eye"></i> プレビュー
+                    </button>
+                    <button type="submit" id="importBtn" class="btn-apple btn-apple-primary" style="width: 100%; display: none;">
+                        <i class="bi bi-arrow-up-circle"></i> インポート実行
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- プレビュー領域 -->
+        <div id="previewArea" class="card-apple" style="display: none;">
+            <div class="card-apple-header">
+                <span><i class="bi bi-table"></i> プレビュー</span>
+                <span id="previewCount" style="float: right; font-weight: 400; color: var(--text-secondary);"></span>
+            </div>
+            <div class="card-apple-body" style="padding: 0; overflow-x: auto;">
+                <table class="table-apple" id="previewTable">
+                    <thead id="previewHead"></thead>
+                    <tbody id="previewBody"></tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -94,5 +113,116 @@
         </div>
     </div>
 </div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if members %}
+<script>
+function previewCSV() {
+    const form = document.getElementById('importForm');
+    const formData = new FormData(form);
+
+    // Validate
+    if (!formData.get('member_id') || !formData.get('csv_file').name) {
+        alert('メンバーとCSVファイルを選択してください');
+        return;
+    }
+
+    const btn = document.getElementById('previewBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 解析中...';
+
+    fetch('/api/import/preview', {
+        method: 'POST',
+        body: formData,
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.error) {
+            alert('エラー: ' + data.error);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-eye"></i> プレビュー';
+            return;
+        }
+
+        renderPreview(data);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-eye"></i> プレビュー';
+
+        // Show import button
+        document.getElementById('importBtn').style.display = '';
+    })
+    .catch(err => {
+        alert('通信エラーが発生しました');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-eye"></i> プレビュー';
+    });
+}
+
+function renderPreview(data) {
+    const area = document.getElementById('previewArea');
+    const head = document.getElementById('previewHead');
+    const body = document.getElementById('previewBody');
+
+    area.style.display = '';
+    document.getElementById('previewCount').textContent = data.count + '件のデータ';
+
+    if (data.rows.length === 0) {
+        head.innerHTML = '';
+        body.innerHTML = '<tr><td style="text-align:center; padding:20px; color:var(--text-secondary);">データがありません</td></tr>';
+        return;
+    }
+
+    // Header columns - show key fields
+    const displayCols = ['name', 'symbol', 'account_type', 'asset_class', 'quantity', 'avg_cost', 'current_price', 'currency'];
+    const colLabels = {
+        'name': '銘柄名', 'symbol': 'コード', 'account_type': '口座',
+        'asset_class': '分類', 'quantity': '数量', 'avg_cost': '取得単価',
+        'current_price': '現在値', 'currency': '通貨',
+        'nisa_type': 'NISA区分', 'is_nisa': 'NISA',
+    };
+
+    // Find available columns
+    const available = displayCols.filter(c => c in data.rows[0]);
+
+    let headerHTML = '<tr>';
+    available.forEach(c => {
+        const align = ['quantity', 'avg_cost', 'current_price'].includes(c) ? 'text-align:right;' : '';
+        headerHTML += '<th style="' + align + '">' + (colLabels[c] || c) + '</th>';
+    });
+    headerHTML += '</tr>';
+    head.innerHTML = headerHTML;
+
+    let bodyHTML = '';
+    const maxRows = Math.min(data.rows.length, 50);
+    for (let i = 0; i < maxRows; i++) {
+        const row = data.rows[i];
+        bodyHTML += '<tr>';
+        available.forEach(c => {
+            let val = row[c];
+            if (val === null || val === undefined) val = '';
+            const align = ['quantity', 'avg_cost', 'current_price'].includes(c) ? 'text-align:right;' : '';
+            if (typeof val === 'number') {
+                val = val.toLocaleString(undefined, {maximumFractionDigits: 4});
+            }
+            bodyHTML += '<td style="' + align + '">' + val + '</td>';
+        });
+        bodyHTML += '</tr>';
+    }
+    if (data.rows.length > 50) {
+        bodyHTML += '<tr><td colspan="' + available.length + '" style="text-align:center; color:var(--text-secondary); font-size:0.82rem;">...他 ' + (data.rows.length - 50) + ' 件</td></tr>';
+    }
+    body.innerHTML = bodyHTML;
+}
+
+// Import form submit
+document.getElementById('importForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    this.action = '/import/upload';
+    this.method = 'POST';
+    this.submit();
+});
+</script>
 {% endif %}
 {% endblock %}
