@@ -10,6 +10,7 @@ from calculators import (
     calculate_broker_allocation,
 )
 from datetime import datetime
+from exchange_rates import get_exchange_rates, convert_to_jpy, get_rate_display
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.urandom(24)
@@ -33,6 +34,7 @@ def format_currency(value, currency='JPY'):
 
 
 app.jinja_env.filters['currency'] = format_currency
+app.jinja_env.globals['convert_to_jpy'] = convert_to_jpy
 
 
 def _get_family_holdings(family):
@@ -50,9 +52,13 @@ def dashboard():
     families = Family.query.all()
     family_id = request.args.get('family_id', type=int)
 
+    # 為替レート取得
+    rates, api_success = get_exchange_rates()
+    rate_info = get_rate_display(rates, api_success)
+
     if not families:
         return render_template('dashboard.html', families=families, selected_family=None,
-                               summary=None)
+                               summary=None, rate_info=rate_info)
 
     selected_family = None
     if family_id:
@@ -66,8 +72,9 @@ def dashboard():
         member_holdings = []
         for account in member.accounts:
             member_holdings.extend(account.holdings)
-        total = sum(h.market_value for h in member_holdings)
-        pnl = sum(h.unrealized_pnl for h in member_holdings)
+        # JPY換算で合計
+        total = sum(convert_to_jpy(h.market_value, h.currency, rates) for h in member_holdings)
+        pnl = sum(convert_to_jpy(h.unrealized_pnl, h.currency, rates) for h in member_holdings)
         member_summaries.append({
             'member': member,
             'total_value': total,
@@ -75,13 +82,13 @@ def dashboard():
             'holding_count': len(member_holdings),
         })
 
-    asset_alloc = calculate_asset_allocation(all_holdings) if all_holdings else None
-    broker_alloc = calculate_broker_allocation(all_holdings) if all_holdings else None
+    asset_alloc = calculate_asset_allocation(all_holdings, rates) if all_holdings else None
+    broker_alloc = calculate_broker_allocation(all_holdings, rates) if all_holdings else None
 
     summary = {
-        'total_value': sum(h.market_value for h in all_holdings),
-        'total_pnl': sum(h.unrealized_pnl for h in all_holdings),
-        'total_cost': sum(h.cost_basis for h in all_holdings),
+        'total_value': sum(convert_to_jpy(h.market_value, h.currency, rates) for h in all_holdings),
+        'total_pnl': sum(convert_to_jpy(h.unrealized_pnl, h.currency, rates) for h in all_holdings),
+        'total_cost': sum(convert_to_jpy(h.cost_basis, h.currency, rates) for h in all_holdings),
         'holding_count': len(all_holdings),
         'member_summaries': member_summaries,
         'asset_allocation': asset_alloc,
@@ -89,7 +96,8 @@ def dashboard():
     }
 
     return render_template('dashboard.html', families=families,
-                           selected_family=selected_family, summary=summary)
+                           selected_family=selected_family, summary=summary,
+                           rate_info=rate_info)
 
 
 # ── 家族管理 ──────────────────────────────────
@@ -342,9 +350,11 @@ def assets():
     families = Family.query.all()
     members = FamilyMember.query.all()
 
+    rates, _ = get_exchange_rates()
+
     return render_template('assets.html', holdings=holdings, families=families,
                            members=members, selected_family_id=family_id,
-                           selected_member_id=member_id)
+                           selected_member_id=member_id, rates=rates)
 
 
 # ── 複利シミュレーション ─────────────────────────
@@ -353,9 +363,10 @@ def simulation():
     families = Family.query.all()
     total_value = 0
     if families:
+        rates, _ = get_exchange_rates()
         family = families[0]
         all_holdings = _get_family_holdings(family)
-        total_value = sum(h.market_value for h in all_holdings)
+        total_value = sum(convert_to_jpy(h.market_value, h.currency, rates) for h in all_holdings)
     return render_template('simulation.html', current_portfolio_value=round(total_value))
 
 
@@ -386,13 +397,14 @@ def api_simulation():
 
 @app.route('/api/portfolio_value')
 def api_portfolio_value():
-    """現在のポートフォリオ総額を返す"""
+    """現在のポートフォリオ総額を返す（JPY換算）"""
     families = Family.query.all()
     total = 0
     if families:
+        rates, _ = get_exchange_rates()
         for family in families:
             holdings = _get_family_holdings(family)
-            total += sum(h.market_value for h in holdings)
+            total += sum(convert_to_jpy(h.market_value, h.currency, rates) for h in holdings)
     return jsonify({'total_value': round(total)})
 
 
@@ -414,8 +426,9 @@ def nisa():
 
     nisa_data = []
     if selected_family:
+        rates, _ = get_exchange_rates()
         for member in selected_family.members:
-            summary = calculate_nisa_from_holdings(member)
+            summary = calculate_nisa_from_holdings(member, rates)
             nisa_data.append({
                 'member': member,
                 'summary': summary,
@@ -434,8 +447,9 @@ def api_asset_allocation(family_id):
     if not all_holdings:
         return jsonify({'error': 'No holdings found'})
 
-    asset = calculate_asset_allocation(all_holdings)
-    broker = calculate_broker_allocation(all_holdings)
+    rates, _ = get_exchange_rates()
+    asset = calculate_asset_allocation(all_holdings, rates)
+    broker = calculate_broker_allocation(all_holdings, rates)
 
     return jsonify({
         'asset': {

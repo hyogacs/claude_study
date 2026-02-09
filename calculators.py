@@ -1,4 +1,5 @@
 from models import NISAUsage
+from exchange_rates import convert_to_jpy
 
 # 貴金属に分類する銘柄コード
 PRECIOUS_METAL_SYMBOLS = {'1540', '1541', '1542', '1693'}
@@ -77,9 +78,9 @@ def calculate_fire_number(annual_expenses, withdrawal_rate=4.0):
     return round(annual_expenses / (withdrawal_rate / 100))
 
 
-def calculate_nisa_from_holdings(member):
+def calculate_nisa_from_holdings(member, rates=None):
     """
-    保有資産データからNISA利用状況を自動計算する
+    保有資産データからNISA利用状況を自動計算する（JPY換算対応）
 
     Returns:
         dict: NISA利用状況のサマリー
@@ -102,9 +103,14 @@ def calculate_nisa_from_holdings(member):
         # account_name に種別がない場合、資産クラスで推定
         # 投資信託 → つみたて、株式 → 成長 がデフォルト
         for h in account.holdings:
-            cost = h.cost_basis
-            value = h.market_value
-            pnl = h.unrealized_pnl
+            if rates:
+                cost = convert_to_jpy(h.cost_basis, h.currency, rates)
+                value = convert_to_jpy(h.market_value, h.currency, rates)
+                pnl = convert_to_jpy(h.unrealized_pnl, h.currency, rates)
+            else:
+                cost = h.cost_basis
+                value = h.market_value
+                pnl = h.unrealized_pnl
             pnl_pct = h.pnl_percent
 
             holding_info = {
@@ -114,6 +120,7 @@ def calculate_nisa_from_holdings(member):
                 'value': value,
                 'pnl': pnl,
                 'pnl_percent': pnl_pct,
+                'currency': h.currency,
             }
 
             if is_tsumitate:
@@ -154,9 +161,9 @@ def calculate_nisa_from_holdings(member):
     }
 
 
-def calculate_asset_allocation(holdings):
+def calculate_asset_allocation(holdings, rates=None):
     """
-    資産配分を計算（貴金属の再分類を含む）
+    資産配分を計算（貴金属の再分類を含む、JPY換算対応）
 
     Returns:
         allocation: 資産クラスごとの配分データ
@@ -165,7 +172,12 @@ def calculate_asset_allocation(holdings):
     total_value = 0
 
     for h in holdings:
-        value = h.market_value
+        if rates:
+            value = convert_to_jpy(h.market_value, h.currency, rates)
+            pnl = convert_to_jpy(h.unrealized_pnl, h.currency, rates)
+        else:
+            value = h.market_value
+            pnl = h.unrealized_pnl
         total_value += value
         cls = reclassify_asset_class(h)
         if cls not in allocation:
@@ -176,8 +188,9 @@ def calculate_asset_allocation(holdings):
             'name': h.name,
             'symbol': h.symbol,
             'value': value,
-            'pnl': h.unrealized_pnl,
+            'pnl': pnl,
             'pnl_percent': h.pnl_percent,
+            'currency': h.currency,
         })
 
     for cls in allocation:
@@ -191,14 +204,17 @@ def calculate_asset_allocation(holdings):
     }
 
 
-def calculate_broker_allocation(holdings):
-    """証券会社ごとの資産配分を計算"""
+def calculate_broker_allocation(holdings, rates=None):
+    """証券会社ごとの資産配分を計算（JPY換算対応）"""
     by_broker = {}
     total = 0
 
     for h in holdings:
         broker = h.account.broker if h.account else '不明'
-        value = h.market_value
+        if rates:
+            value = convert_to_jpy(h.market_value, h.currency, rates)
+        else:
+            value = h.market_value
         total += value
         if broker not in by_broker:
             by_broker[broker] = 0

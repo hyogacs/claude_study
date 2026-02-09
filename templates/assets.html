@@ -70,11 +70,16 @@
                 {% endfor %}
             </tbody>
             <tfoot>
+                {% set ns_jpy = namespace(total_value=0, total_pnl=0) %}
+                {% for h in holdings %}
+                {% set ns_jpy.total_value = ns_jpy.total_value + convert_to_jpy(h.market_value, h.currency, rates) %}
+                {% set ns_jpy.total_pnl = ns_jpy.total_pnl + convert_to_jpy(h.unrealized_pnl, h.currency, rates) %}
+                {% endfor %}
                 <tr>
-                    <td colspan="8" style="text-align: right; font-weight: 700;">合計</td>
-                    <td style="text-align: right; font-weight: 700;">{{ ns.total_value | currency }}</td>
-                    <td style="text-align: right; font-weight: 700;" class="{{ 'text-positive' if ns.total_pnl >= 0 else 'text-negative' }}">
-                        {{ ns.total_pnl | currency }}
+                    <td colspan="8" style="text-align: right; font-weight: 700;">合計（JPY換算）</td>
+                    <td style="text-align: right; font-weight: 700;">{{ ns_jpy.total_value | currency }}</td>
+                    <td style="text-align: right; font-weight: 700;" class="{{ 'text-positive' if ns_jpy.total_pnl >= 0 else 'text-negative' }}">
+                        {{ ns_jpy.total_pnl | currency }}
                     </td>
                     <td colspan="2"></td>
                 </tr>

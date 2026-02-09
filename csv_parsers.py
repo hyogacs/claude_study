@@ -300,10 +300,18 @@ def parse_moomoo_holdings(file_content, encoding='utf-8'):
     """
     try:
         if isinstance(file_content, bytes):
-            try:
-                content = file_content.decode(encoding)
-            except UnicodeDecodeError:
-                content = file_content.decode('shift_jis')
+            # BOM除去
+            if file_content.startswith(b'\xef\xbb\xbf'):
+                file_content = file_content[3:]
+            # エンコーディング自動検出: UTF-8 → GBK → Shift_JIS
+            for enc in [encoding, 'gbk', 'gb2312', 'shift_jis']:
+                try:
+                    content = file_content.decode(enc)
+                    break
+                except (UnicodeDecodeError, LookupError):
+                    continue
+            else:
+                content = file_content.decode('utf-8', errors='replace')
         else:
             content = file_content
 

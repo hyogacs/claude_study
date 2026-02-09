@@ -22,6 +22,24 @@
 </div>
 {% elif summary %}
 
+<!-- 為替レート -->
+{% if rate_info %}
+<div style="margin-bottom: 16px; display: flex; align-items: center; gap: 16px; font-size: 0.82rem; color: var(--text-secondary);">
+    <span style="display: inline-flex; align-items: center; gap: 4px;">
+        <i class="bi bi-currency-exchange"></i>
+        USD/JPY: <strong style="color: var(--text-primary);">{{ '%.2f' | format(rate_info.usd_jpy) }}</strong>
+    </span>
+    <span style="display: inline-flex; align-items: center; gap: 4px;">
+        HKD/JPY: <strong style="color: var(--text-primary);">{{ '%.2f' | format(rate_info.hkd_jpy) }}</strong>
+    </span>
+    {% if rate_info.api_success %}
+    <span style="color: var(--green); font-size: 0.75rem;"><i class="bi bi-check-circle-fill"></i> リアルタイム</span>
+    {% else %}
+    <span style="color: var(--orange); font-size: 0.75rem;"><i class="bi bi-exclamation-circle-fill"></i> 参考レート</span>
+    {% endif %}
+</div>
+{% endif %}
+
 <!-- サマリーカード -->
 <div class="grid-4" style="margin-bottom: 24px;">
     <div class="stat-card">
