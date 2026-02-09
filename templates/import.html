@@ -77,18 +77,19 @@
         <div class="card-apple">
             <div class="card-apple-header"><span class="badge-apple badge-moomoo" style="margin-right: 6px;">moomoo</span> moomoo証券 CSV形式</div>
             <div class="card-apple-body">
-                <p style="font-size: 0.82rem; margin-bottom: 10px;">moomoo証券の保有資産CSVに対応しています。</p>
-                <p style="font-size: 0.82rem; margin-bottom: 8px;">想定カラム:</p>
-                <ul style="font-size: 0.82rem; padding-left: 18px; margin-bottom: 10px;">
-                    <li>Symbol / 銘柄コード</li>
-                    <li>Name / 銘柄名</li>
-                    <li>Qty / 数量</li>
-                    <li>Avg Cost / 取得単価</li>
-                    <li>Market Price / 現在値</li>
-                    <li>Market Value / 評価額</li>
-                    <li>P&amp;L / 損益</li>
+                <p style="font-size: 0.82rem; margin-bottom: 10px;">株式持仓と基金持仓のCSVに対応（ヘッダーから自動判別）。</p>
+                <p style="font-size: 0.82rem; font-weight: 600; margin-bottom: 4px;">株式持仓CSV:</p>
+                <ul style="font-size: 0.78rem; padding-left: 18px; margin-bottom: 8px;">
+                    <li>代码, 名称, 持有账户, 持有数量</li>
+                    <li>现价, 平均成本价, 币种</li>
                 </ul>
-                <div style="font-size: 0.75rem; color: var(--text-secondary);">エンコーディング: UTF-8</div>
+                <p style="font-size: 0.82rem; font-weight: 600; margin-bottom: 4px;">基金持仓CSV:</p>
+                <ul style="font-size: 0.78rem; padding-left: 18px; margin-bottom: 8px;">
+                    <li>ISIN代码, 名称, 持有账户</li>
+                    <li>持仓金额, 持仓份额, 币种</li>
+                </ul>
+                <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px;">口座区分: 持有账户から自動認識（成长NISA → 成長投資枠）</div>
+                <div style="font-size: 0.75rem; color: var(--text-secondary);">株式と基金は別々にインポート可能（上書きなし）</div>
             </div>
         </div>
     </div>

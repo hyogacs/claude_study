@@ -35,20 +35,25 @@ def parse_sbi_holdings(file_content, encoding='shift_jis'):
 
             if asset_class == '株式':
                 rows = _parse_sbi_stock_section(section['data_lines'])
+                # SBIの株式は日本株式として分類
+                display_class = '日本株式'
             elif asset_class == '投資信託':
                 rows = _parse_sbi_fund_section(section['data_lines'])
+                display_class = '投資信託'
             elif asset_class == '国内債券':
                 rows = _parse_sbi_bond_section(section['data_lines'])
+                display_class = '国内債券'
             else:
                 continue
 
             for row in rows:
-                row['asset_class'] = asset_class
+                row['asset_class'] = display_class
                 row['account_type'] = account_type
                 row['nisa_type'] = nisa_type
                 row['is_nisa'] = is_nisa
                 row['currency'] = 'JPY'
                 row['broker'] = 'SBI'
+                row['sub_type'] = ''
                 all_rows.append(row)
 
         if not all_rows:
@@ -162,7 +167,7 @@ def _clean_numeric(val):
     if pd.isna(val) or val == '' or val == '--':
         return 0.0
     s = str(val).strip().replace(',', '').replace('"', '').replace('円', '').replace('口', '')
-    s = s.replace('+', '').replace('　', '')
+    s = s.replace('+', '').replace('　', '').replace('%', '')
     try:
         return float(s)
     except ValueError:
@@ -287,77 +292,169 @@ def _parse_sbi_bond_section(data_lines):
 
 def parse_moomoo_holdings(file_content, encoding='utf-8'):
     """
-    moomoo証券の保有証券CSVを解析する
-    想定カラム: Symbol, Name, Qty, Avg Cost, Market Price, Market Value, P&L, P&L%
+    moomoo証券の保有CSV（株式 or 基金）を解析する。
+    ヘッダー行から株式CSVか基金CSVかを自動判定する。
+
+    株式CSV: "代码","名称","持有账户","持有数量","可用数量","现价","平均成本价","市值",...,"币种",...
+    基金CSV: "ISIN代码","名称","持有账户","持仓金额","持仓份额","持仓占比","币种",...
     """
     try:
         if isinstance(file_content, bytes):
-            content = file_content.decode(encoding)
+            try:
+                content = file_content.decode(encoding)
+            except UnicodeDecodeError:
+                content = file_content.decode('shift_jis')
         else:
             content = file_content
 
-        df = pd.read_csv(io.StringIO(content))
-        df.columns = df.columns.str.strip()
+        # ヘッダー行を読んでファイルタイプを判定
+        first_line = content.split('\n')[0].strip()
 
-        column_map = {}
-        for col in df.columns:
-            col_lower = col.lower()
-            if col_lower in ('symbol', 'ticker', 'code', '銘柄コード', 'ティッカー'):
-                column_map[col] = 'symbol'
-            elif col_lower in ('name', 'stock name', '銘柄名', '名称'):
-                column_map[col] = 'name'
-            elif col_lower in ('qty', 'quantity', 'shares', '数量', '保有数量'):
-                column_map[col] = 'quantity'
-            elif 'avg' in col_lower and ('cost' in col_lower or 'price' in col_lower) or '取得' in col_lower:
-                column_map[col] = 'avg_cost'
-            elif ('market' in col_lower and 'price' in col_lower) or col_lower in ('price', 'last', '現在値'):
-                column_map[col] = 'current_price'
-            elif ('market' in col_lower and 'value' in col_lower) or col_lower in ('value', '評価額'):
-                column_map[col] = 'market_value'
-            elif col_lower in ('p&l', 'pnl', 'profit', '損益') and '%' not in col_lower and '率' not in col_lower:
-                column_map[col] = 'pnl'
-            elif col_lower in ('account', 'type', '口座区分'):
-                column_map[col] = 'account_type'
-            elif col_lower in ('currency', '通貨'):
-                column_map[col] = 'currency'
-
-        df = df.rename(columns=column_map)
-
-        for col in ['quantity', 'avg_cost', 'current_price', 'market_value', 'pnl']:
-            if col in df.columns:
-                df[col] = pd.to_numeric(
-                    df[col].astype(str).str.replace(',', '').str.replace('$', '').str.replace('¥', '').str.strip(),
-                    errors='coerce'
-                ).fillna(0)
-
-        if 'symbol' not in df.columns:
-            df['symbol'] = ''
-        if 'name' not in df.columns:
-            df['name'] = 'Unknown'
-        if 'quantity' not in df.columns:
-            df['quantity'] = 0
-        if 'avg_cost' not in df.columns:
-            df['avg_cost'] = 0
-        if 'current_price' not in df.columns:
-            if 'market_value' in df.columns and df['quantity'].sum() > 0:
-                df['current_price'] = df['market_value'] / df['quantity'].replace(0, 1)
-            else:
-                df['current_price'] = 0
-        if 'currency' not in df.columns:
-            df['currency'] = 'JPY'
-        if 'asset_class' not in df.columns:
-            df['asset_class'] = '外国株式'
-        if 'account_type' not in df.columns:
-            df['account_type'] = '特定'
-
-        df['is_nisa'] = df['account_type'].astype(str).str.contains('NISA|ニーサ', case=False, na=False)
-        df['nisa_type'] = ''
-        df['broker'] = 'moomoo'
-
-        return df, None
+        if 'ISIN' in first_line or '持仓金额' in first_line or '持仓份额' in first_line:
+            return _parse_moomoo_fund_csv(content)
+        else:
+            return _parse_moomoo_stock_csv(content)
 
     except Exception as e:
         return None, f"moomoo CSVの解析エラー: {str(e)}"
+
+
+def _parse_moomoo_account(account_str):
+    """
+    moomooの持有账户フィールドからNISA種別を判定する
+
+    Examples:
+      "成长NISA" / "成長NISA" -> ("NISA", "成長投資枠", True)
+      "积立NISA" / "つみたてNISA" -> ("NISA", "つみたて投資枠", True)
+      "特定" / "" / other -> ("特定", "", False)
+    """
+    s = str(account_str).strip().replace('"', '')
+
+    if 'NISA' in s.upper():
+        is_nisa = True
+        # 成長投資枠の判定（簡体字「成长」、繁体字/日本語「成長」）
+        if '成长' in s or '成長' in s:
+            return 'NISA', '成長投資枠', is_nisa
+        # つみたて投資枠の判定
+        elif '积立' in s or 'つみたて' in s or '積立' in s:
+            return 'NISA', 'つみたて投資枠', is_nisa
+        else:
+            # NISA種別が不明な場合
+            return 'NISA', '', is_nisa
+    else:
+        return '特定', '', False
+
+
+def _parse_moomoo_stock_csv(content):
+    """
+    moomoo株式持仓CSVを解析する
+
+    カラム: 代码, 名称, 持有账户, 持有数量, 可用数量, 现价, 平均成本价,
+            市值, 未实现盈亏比例, 总盈亏金额, 未实现盈亏, 已实现盈亏,
+            今日盈亏, 持仓占比, 币种, 今日成交额, 今日买入@均价, 今日卖出@均价
+    """
+    df = pd.read_csv(io.StringIO(content), dtype=str, quotechar='"')
+    df.columns = df.columns.str.strip().str.replace('"', '')
+
+    all_rows = []
+    for _, r in df.iterrows():
+        cols = {c.strip().replace('"', ''): str(v).strip().replace('"', '') for c, v in r.items()}
+
+        symbol = cols.get('代码', cols.get('代號', ''))
+        name = cols.get('名称', cols.get('名稱', ''))
+        account_str = cols.get('持有账户', cols.get('持有帳戶', ''))
+        quantity = _clean_numeric(cols.get('持有数量', cols.get('持有數量', 0)))
+        current_price = _clean_numeric(cols.get('现价', cols.get('現價', 0)))
+        avg_cost = _clean_numeric(cols.get('平均成本价', cols.get('平均成本價', 0)))
+        currency = cols.get('币种', cols.get('幣種', 'USD')).strip().replace('"', '')
+
+        if quantity <= 0:
+            continue
+
+        account_type, nisa_type, is_nisa = _parse_moomoo_account(account_str)
+
+        # 通貨で日本株式/米国株式を区別
+        if currency == 'JPY':
+            asset_class = '日本株式'
+        elif currency == 'USD':
+            asset_class = '米国株式'
+        elif currency == 'HKD':
+            asset_class = '香港株式'
+        else:
+            asset_class = '外国株式'
+
+        all_rows.append({
+            'symbol': symbol,
+            'name': name,
+            'quantity': quantity,
+            'avg_cost': avg_cost,
+            'current_price': current_price,
+            'currency': currency,
+            'asset_class': asset_class,
+            'account_type': account_type,
+            'nisa_type': nisa_type,
+            'is_nisa': is_nisa,
+            'broker': 'moomoo',
+            'sub_type': '株式',
+        })
+
+    if not all_rows:
+        return None, "moomoo株式CSVに解析可能なデータが見つかりませんでした"
+
+    return pd.DataFrame(all_rows), None
+
+
+def _parse_moomoo_fund_csv(content):
+    """
+    moomoo基金持仓CSVを解析する
+
+    カラム: ISIN代码, 名称, 持有账户, 持仓金额, 持仓份额,
+            持仓占比, 币种, 累计收益, 未实现收益, 未实现收益率
+    """
+    df = pd.read_csv(io.StringIO(content), dtype=str, quotechar='"')
+    df.columns = df.columns.str.strip().str.replace('"', '')
+
+    all_rows = []
+    for _, r in df.iterrows():
+        cols = {c.strip().replace('"', ''): str(v).strip().replace('"', '') for c, v in r.items()}
+
+        symbol = cols.get('ISIN代码', cols.get('ISIN代碼', ''))
+        name = cols.get('名称', cols.get('名稱', ''))
+        account_str = cols.get('持有账户', cols.get('持有帳戶', ''))
+        market_value = _clean_numeric(cols.get('持仓金额', cols.get('持倉金額', 0)))
+        quantity = _clean_numeric(cols.get('持仓份额', cols.get('持倉份額', 0)))
+        currency = cols.get('币种', cols.get('幣種', 'JPY')).strip().replace('"', '')
+        unrealized_pnl = _clean_numeric(cols.get('未实现收益', cols.get('未實現收益', 0)))
+
+        if quantity <= 0 or market_value <= 0:
+            continue
+
+        account_type, nisa_type, is_nisa = _parse_moomoo_account(account_str)
+
+        # 取得金額 = 時価 - 含み損益
+        cost_basis = market_value - unrealized_pnl
+        avg_cost = cost_basis / quantity
+        current_price = market_value / quantity
+
+        all_rows.append({
+            'symbol': symbol,
+            'name': name,
+            'quantity': quantity,
+            'avg_cost': avg_cost,
+            'current_price': current_price,
+            'currency': currency,
+            'asset_class': '投資信託',
+            'account_type': account_type,
+            'nisa_type': nisa_type,
+            'is_nisa': is_nisa,
+            'broker': 'moomoo',
+            'sub_type': '投信',
+        })
+
+    if not all_rows:
+        return None, "moomoo基金CSVに解析可能なデータが見つかりませんでした"
+
+    return pd.DataFrame(all_rows), None
 
 
 # ── 取引履歴解析 ──────────────────────────────

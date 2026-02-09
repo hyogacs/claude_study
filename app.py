@@ -178,14 +178,16 @@ def import_upload():
         return _import_transactions(member, broker, content)
 
 
-def _get_or_create_account(member, broker, account_type, nisa_type=''):
+def _get_or_create_account(member, broker, account_type, nisa_type='', sub_type=''):
     """口座を取得、なければ作成する"""
     name_parts = [broker, account_type]
     if nisa_type:
         name_parts.append(nisa_type)
+    if sub_type:
+        name_parts.append(sub_type)
     account_name = ' '.join(name_parts) + '口座'
 
-    # account_nameで検索することで、NISA成長とNISAつみたてを区別する
+    # account_nameで検索することで、NISA成長/つみたて、株式/投信を区別する
     account = Account.query.filter_by(
         member_id=member.id, broker=broker, account_type=account_type,
         account_name=account_name
@@ -214,27 +216,40 @@ def _import_holdings(member, broker, content):
         flash(error, 'error')
         return redirect(url_for('import_page'))
 
-    # Clear existing holdings for this broker/member before import
-    existing_accounts = Account.query.filter_by(
-        member_id=member.id, broker=broker
-    ).all()
-    for acc in existing_accounts:
-        Holding.query.filter_by(account_id=acc.id).delete()
-
-    # Group by account_type and import into separate accounts
-    count = 0
+    # Build account cache first (to know which accounts will be updated)
     account_cache = {}
-
     for _, row in df.iterrows():
         account_type = str(row.get('account_type', '特定'))
         nisa_type = str(row.get('nisa_type', ''))
+        sub_type = str(row.get('sub_type', ''))
 
-        cache_key = (broker, account_type, nisa_type)
+        cache_key = (broker, account_type, nisa_type, sub_type)
         if cache_key not in account_cache:
             account_cache[cache_key] = _get_or_create_account(
-                member, broker, account_type, nisa_type
+                member, broker, account_type, nisa_type, sub_type
             )
 
+    # Clear holdings before import
+    if broker == 'SBI':
+        # SBI: 1つのCSVに全データが入っているので、全SBI口座をクリア
+        existing_accounts = Account.query.filter_by(
+            member_id=member.id, broker=broker
+        ).all()
+        for acc in existing_accounts:
+            Holding.query.filter_by(account_id=acc.id).delete()
+    else:
+        # moomoo: 株式CSVと基金CSVが別ファイルなので、該当口座のみクリア
+        for acc in account_cache.values():
+            Holding.query.filter_by(account_id=acc.id).delete()
+
+    # Import holdings
+    count = 0
+    for _, row in df.iterrows():
+        account_type = str(row.get('account_type', '特定'))
+        nisa_type = str(row.get('nisa_type', ''))
+        sub_type = str(row.get('sub_type', ''))
+
+        cache_key = (broker, account_type, nisa_type, sub_type)
         account = account_cache[cache_key]
         holding = Holding(
             account_id=account.id,
@@ -254,9 +269,10 @@ def _import_holdings(member, broker, content):
 
     # Build detail message
     details = []
-    for (b, at, nt), acc in account_cache.items():
+    for key, acc in account_cache.items():
         n = Holding.query.filter_by(account_id=acc.id).count()
-        label = at + (f'({nt})' if nt else '')
+        _, at, nt, st = key
+        label = at + (f'({nt})' if nt else '') + (f' {st}' if st else '')
         details.append(f'{label}: {n}件')
     detail_str = '、'.join(details)
 
