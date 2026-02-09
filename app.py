@@ -154,7 +154,6 @@ def import_upload():
     member_id = request.form.get('member_id', type=int)
     broker = request.form.get('broker', '')
     file_type = request.form.get('file_type', 'holdings')
-    account_type = request.form.get('account_type', '特定')
     file = request.files.get('csv_file')
 
     if not file or not file.filename:
@@ -169,12 +168,31 @@ def import_upload():
     content = file.read()
 
     if file_type == 'holdings':
-        return _import_holdings(member, broker, account_type, content)
+        return _import_holdings(member, broker, content)
     else:
-        return _import_transactions(member, broker, account_type, content)
+        return _import_transactions(member, broker, content)
 
 
-def _import_holdings(member, broker, account_type, content):
+def _get_or_create_account(member, broker, account_type, nisa_type=''):
+    """口座を取得、なければ作成する"""
+    account = Account.query.filter_by(
+        member_id=member.id, broker=broker, account_type=account_type
+    ).first()
+    if not account:
+        name_parts = [broker, account_type]
+        if nisa_type:
+            name_parts.append(nisa_type)
+        account = Account(
+            member_id=member.id, broker=broker,
+            account_type=account_type,
+            account_name=' '.join(name_parts) + '口座'
+        )
+        db.session.add(account)
+        db.session.flush()
+    return account
+
+
+def _import_holdings(member, broker, content):
     if broker == 'SBI':
         df, error = parse_sbi_holdings(content)
     elif broker == 'moomoo':
@@ -187,23 +205,28 @@ def _import_holdings(member, broker, account_type, content):
         flash(error, 'error')
         return redirect(url_for('import_page'))
 
-    account = Account.query.filter_by(
-        member_id=member.id, broker=broker, account_type=account_type
-    ).first()
-    if not account:
-        account = Account(
-            member_id=member.id, broker=broker,
-            account_type=account_type,
-            account_name=f"{broker} {account_type}口座"
-        )
-        db.session.add(account)
-        db.session.flush()
+    # Clear existing holdings for this broker/member before import
+    existing_accounts = Account.query.filter_by(
+        member_id=member.id, broker=broker
+    ).all()
+    for acc in existing_accounts:
+        Holding.query.filter_by(account_id=acc.id).delete()
 
-    # Clear existing holdings for this account before import
-    Holding.query.filter_by(account_id=account.id).delete()
-
+    # Group by account_type and import into separate accounts
     count = 0
+    account_cache = {}
+
     for _, row in df.iterrows():
+        account_type = str(row.get('account_type', '特定'))
+        nisa_type = str(row.get('nisa_type', ''))
+
+        cache_key = (broker, account_type)
+        if cache_key not in account_cache:
+            account_cache[cache_key] = _get_or_create_account(
+                member, broker, account_type, nisa_type
+            )
+
+        account = account_cache[cache_key]
         holding = Holding(
             account_id=account.id,
             symbol=str(row.get('symbol', '')),
@@ -219,11 +242,19 @@ def _import_holdings(member, broker, account_type, content):
         count += 1
 
     db.session.commit()
-    flash(f'{broker}から{count}件の保有資産をインポートしました', 'success')
+
+    # Build detail message
+    details = []
+    for (b, at), acc in account_cache.items():
+        n = Holding.query.filter_by(account_id=acc.id).count()
+        details.append(f'{at}: {n}件')
+    detail_str = '、'.join(details)
+
+    flash(f'{broker}から{count}件の保有資産をインポートしました（{detail_str}）', 'success')
     return redirect(url_for('import_page'))
 
 
-def _import_transactions(member, broker, account_type, content):
+def _import_transactions(member, broker, content):
     if broker == 'SBI':
         df, error = parse_sbi_transactions(content)
     else:
@@ -235,13 +266,13 @@ def _import_transactions(member, broker, account_type, content):
         return redirect(url_for('import_page'))
 
     account = Account.query.filter_by(
-        member_id=member.id, broker=broker, account_type=account_type
+        member_id=member.id, broker=broker, account_type='特定'
     ).first()
     if not account:
         account = Account(
             member_id=member.id, broker=broker,
-            account_type=account_type,
-            account_name=f"{broker} {account_type}口座"
+            account_type='特定',
+            account_name=f"{broker} 特定口座"
         )
         db.session.add(account)
         db.session.flush()

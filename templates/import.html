@@ -44,15 +44,6 @@
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label">口座区分</label>
-                        <select class="form-select" name="account_type">
-                            <option value="特定">特定口座</option>
-                            <option value="一般">一般口座</option>
-                            <option value="NISA">NISA口座</option>
-                        </select>
-                    </div>
-
-                    <div class="mb-3">
                         <label class="form-label">CSVファイル</label>
                         <input type="file" class="form-control" name="csv_file" accept=".csv" required>
                         <div class="form-text">CSV形式のファイルを選択してください（最大16MB）</div>
@@ -71,18 +62,13 @@
             <div class="card-header">SBI証券 CSV形式</div>
             <div class="card-body">
                 <p class="small">SBI証券の「保有証券一覧」CSVに対応しています。</p>
-                <p class="small">想定カラム:</p>
+                <p class="small">ファイル内のセクション区分から口座タイプを自動認識します：</p>
                 <ul class="small">
-                    <li>銘柄コード</li>
-                    <li>銘柄名</li>
-                    <li>数量/口数</li>
-                    <li>取得単価</li>
-                    <li>現在値</li>
-                    <li>評価額</li>
-                    <li>損益</li>
-                    <li>口座区分</li>
+                    <li>株式（特定預り / 一般預り / NISA）</li>
+                    <li>投資信託（特定預り / NISAつみたて投資枠）</li>
+                    <li>国内債券</li>
                 </ul>
-                <p class="small text-muted">エンコーディング: Shift_JIS（自動検出）</p>
+                <p class="small text-muted">エンコーディング: Shift_JIS / UTF-8（自動検出）</p>
             </div>
         </div>
 
