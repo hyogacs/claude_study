@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}ダッシュボード - 投資管理システム{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col">
+        <h2><i class="bi bi-speedometer2"></i> ダッシュボード</h2>
+    </div>
+    <div class="col-auto">
+        {% if families %}
+        <select class="form-select" onchange="location.href='/?family_id='+this.value">
+            {% for f in families %}
+            <option value="{{ f.id }}" {% if selected_family and f.id == selected_family.id %}selected{% endif %}>
+                {{ f.name }}
+            </option>
+            {% endfor %}
+        </select>
+        {% endif %}
+    </div>
+</div>
+
+{% if not families %}
+<div class="alert alert-info">
+    <h4>ようこそ!</h4>
+    <p>まず<a href="/family">家族管理</a>ページで家族とメンバーを登録し、
+    <a href="/import">CSV導入</a>ページから証券データをインポートしてください。</p>
+</div>
+{% elif summary %}
+
+<!-- サマリーカード -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card summary-card bg-primary text-white">
+            <div class="card-body">
+                <h6 class="card-title">総資産評価額</h6>
+                <h3>{{ summary.total_value | currency }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card summary-card {{ 'bg-success' if summary.total_pnl >= 0 else 'bg-danger' }} text-white">
+            <div class="card-body">
+                <h6 class="card-title">含み損益</h6>
+                <h3>{{ summary.total_pnl | currency }}</h3>
+                {% if summary.total_cost > 0 %}
+                <small>{{ '%.2f' | format(summary.total_pnl / summary.total_cost * 100) }}%</small>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card summary-card bg-info text-white">
+            <div class="card-body">
+                <h6 class="card-title">投資元本</h6>
+                <h3>{{ summary.total_cost | currency }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card summary-card bg-secondary text-white">
+            <div class="card-body">
+                <h6 class="card-title">保有銘柄数</h6>
+                <h3>{{ summary.holding_count }}銘柄</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- メンバー別サマリー -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-people"></i> メンバー別資産</div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>メンバー</th>
+                                <th>続柄</th>
+                                <th class="text-end">資産評価額</th>
+                                <th class="text-end">含み損益</th>
+                                <th class="text-end">銘柄数</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for ms in summary.member_summaries %}
+                            <tr>
+                                <td>{{ ms.member.name }}</td>
+                                <td>{{ ms.member.relationship }}</td>
+                                <td class="text-end">{{ ms.total_value | currency }}</td>
+                                <td class="text-end {{ 'text-success' if ms.total_pnl >= 0 else 'text-danger' }}">
+                                    {{ ms.total_pnl | currency }}
+                                </td>
+                                <td class="text-end">{{ ms.holding_count }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- チャート -->
+{% if summary.asset_allocation %}
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-pie-chart"></i> 資産クラス別構成</div>
+            <div class="card-body">
+                <canvas id="assetChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-pie-chart"></i> 証券会社別構成</div>
+            <div class="card-body">
+                <canvas id="brokerChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-pie-chart"></i> 通貨別構成</div>
+            <div class="card-body">
+                <canvas id="currencyChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if selected_family and summary and summary.asset_allocation %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    fetch('/api/asset_allocation/{{ selected_family.id }}')
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) return;
+            createPieChart('assetChart', data.asset.labels, data.asset.values, '資産クラス');
+            createPieChart('brokerChart', data.broker.labels, data.broker.values, '証券会社');
+            createPieChart('currencyChart', data.currency.labels, data.currency.values, '通貨');
+        });
+});
+</script>
+{% endif %}
+{% endblock %}

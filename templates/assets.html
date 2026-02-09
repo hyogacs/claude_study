@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}資産一覧 - 投資管理システム{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col">
+        <h2><i class="bi bi-wallet2"></i> 資産一覧</h2>
+    </div>
+    <div class="col-auto">
+        <form class="row g-2" method="GET">
+            <div class="col-auto">
+                <select class="form-select form-select-sm" name="family_id" onchange="this.form.submit()">
+                    <option value="">全家族</option>
+                    {% for f in families %}
+                    <option value="{{ f.id }}" {% if selected_family_id == f.id %}selected{% endif %}>
+                        {{ f.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <select class="form-select form-select-sm" name="member_id" onchange="this.form.submit()">
+                    <option value="">全メンバー</option>
+                    {% for m in members %}
+                    <option value="{{ m.id }}" {% if selected_member_id == m.id %}selected{% endif %}>
+                        {{ m.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if holdings %}
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover table-sm">
+                <thead class="table-light">
+                    <tr>
+                        <th>証券会社</th>
+                        <th>口座</th>
+                        <th>銘柄コード</th>
+                        <th>銘柄名</th>
+                        <th>資産クラス</th>
+                        <th class="text-end">数量</th>
+                        <th class="text-end">取得単価</th>
+                        <th class="text-end">現在値</th>
+                        <th class="text-end">評価額</th>
+                        <th class="text-end">損益</th>
+                        <th class="text-end">損益率</th>
+                        <th>NISA</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% set ns = namespace(total_value=0, total_pnl=0) %}
+                    {% for h in holdings %}
+                    {% set ns.total_value = ns.total_value + h.market_value %}
+                    {% set ns.total_pnl = ns.total_pnl + h.unrealized_pnl %}
+                    <tr>
+                        <td><span class="badge bg-{{ 'primary' if h.account.broker == 'SBI' else 'success' }}">{{ h.account.broker }}</span></td>
+                        <td>{{ h.account.account_type }}</td>
+                        <td>{{ h.symbol }}</td>
+                        <td>{{ h.name }}</td>
+                        <td><span class="badge bg-secondary">{{ h.asset_class }}</span></td>
+                        <td class="text-end">{{ '{:,.2f}'.format(h.quantity) }}</td>
+                        <td class="text-end">{{ h.avg_cost | currency(h.currency) }}</td>
+                        <td class="text-end">{{ h.current_price | currency(h.currency) }}</td>
+                        <td class="text-end">{{ h.market_value | currency(h.currency) }}</td>
+                        <td class="text-end {{ 'text-success' if h.unrealized_pnl >= 0 else 'text-danger' }}">
+                            {{ h.unrealized_pnl | currency(h.currency) }}
+                        </td>
+                        <td class="text-end {{ 'text-success' if h.pnl_percent >= 0 else 'text-danger' }}">
+                            {{ '%.2f' | format(h.pnl_percent) }}%
+                        </td>
+                        <td>{% if h.is_nisa %}<span class="badge bg-warning text-dark">NISA</span>{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="table-dark">
+                    <tr>
+                        <td colspan="8" class="text-end"><strong>合計</strong></td>
+                        <td class="text-end"><strong>{{ ns.total_value | currency }}</strong></td>
+                        <td class="text-end {{ 'text-success' if ns.total_pnl >= 0 else 'text-danger' }}">
+                            <strong>{{ ns.total_pnl | currency }}</strong>
+                        </td>
+                        <td colspan="2"></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-info">
+    資産データがありません。<a href="/import">CSV導入</a>ページからデータをインポートしてください。
+</div>
+{% endif %}
+{% endblock %}

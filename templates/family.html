@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}家族管理 - 投資管理システム{% endblock %}
+
+{% block content %}
+<h2><i class="bi bi-people"></i> 家族管理</h2>
+
+<!-- 家族作成 -->
+<div class="card mb-4">
+    <div class="card-header">新しい家族を作成</div>
+    <div class="card-body">
+        <form method="POST" action="/family/create" class="row g-3">
+            <div class="col-auto">
+                <input type="text" class="form-control" name="family_name" placeholder="家族名（例：山田家）" required>
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-plus-circle"></i> 作成</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 家族一覧 -->
+{% for family in families %}
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-house-door"></i> {{ family.name }}</span>
+        <form method="POST" action="/family/{{ family.id }}/delete"
+              onsubmit="return confirm('「{{ family.name }}」を削除しますか？全メンバーと資産データも削除されます。')">
+            <button type="submit" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-trash"></i> 削除
+            </button>
+        </form>
+    </div>
+    <div class="card-body">
+        <!-- メンバー一覧 -->
+        <table class="table table-hover mb-3">
+            <thead>
+                <tr>
+                    <th>名前</th>
+                    <th>続柄</th>
+                    <th>口座数</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for member in family.members %}
+                <tr>
+                    <td>{{ member.name }}</td>
+                    <td>{{ member.relationship }}</td>
+                    <td>{{ member.accounts | length }}</td>
+                    <td>
+                        <form method="POST" action="/member/{{ member.id }}/delete" class="d-inline"
+                              onsubmit="return confirm('「{{ member.name }}」を削除しますか？')">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not family.members %}
+                <tr>
+                    <td colspan="4" class="text-muted text-center">メンバーがいません</td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+
+        <!-- メンバー追加 -->
+        <form method="POST" action="/family/{{ family.id }}/member/add" class="row g-2">
+            <div class="col-auto">
+                <input type="text" class="form-control form-control-sm" name="member_name" placeholder="名前" required>
+            </div>
+            <div class="col-auto">
+                <select class="form-select form-select-sm" name="relationship" required>
+                    <option value="">続柄を選択</option>
+                    <option value="本人">本人</option>
+                    <option value="配偶者">配偶者</option>
+                    <option value="子供">子供</option>
+                    <option value="親">親</option>
+                    <option value="その他">その他</option>
+                </select>
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-person-plus"></i> 追加</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endfor %}
+
+{% if not families %}
+<div class="alert alert-info">
+    まず上のフォームから家族を作成してください。
+</div>
+{% endif %}
+{% endblock %}

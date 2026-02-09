@@ -1,0 +1,7 @@
+Symbol,Name,Qty,Avg Cost,Market Price,Market Value,P&L,P&L%,Currency
+AAPL,Apple Inc.,20,178.50,195.20,"3,904.00","334.00",9.4,USD
+MSFT,Microsoft Corp.,15,380.00,415.50,"6,232.50","532.50",9.3,USD
+NVDA,NVIDIA Corp.,10,450.00,720.00,"7,200.00","2,700.00",60.0,USD
+AMZN,Amazon.com Inc.,8,155.00,178.50,"1,428.00","188.00",15.2,USD
+VOO,Vanguard S&P 500 ETF,25,420.00,480.00,"12,000.00","1,500.00",14.3,USD
+VTI,Vanguard Total Stock Market ETF,30,225.00,255.00,"7,650.00","900.00",13.3,USD

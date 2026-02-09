@@ -1,0 +1,102 @@
+/* 投資管理システム スタイル */
+
+body {
+    background-color: #f5f6fa;
+    font-family: 'Segoe UI', 'Hiragino Sans', 'Yu Gothic', sans-serif;
+}
+
+.navbar-brand {
+    font-weight: bold;
+}
+
+.summary-card {
+    border: none;
+    border-radius: 12px;
+    transition: transform 0.2s;
+}
+
+.summary-card:hover {
+    transform: translateY(-2px);
+}
+
+.summary-card .card-body {
+    padding: 1.25rem;
+}
+
+.summary-card h3 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 0;
+}
+
+.card {
+    border: none;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+}
+
+.card-header {
+    background-color: #fff;
+    border-bottom: 1px solid #eee;
+    font-weight: 600;
+}
+
+.table th {
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: none;
+}
+
+.table td {
+    vertical-align: middle;
+}
+
+.badge {
+    font-weight: 500;
+}
+
+.progress {
+    border-radius: 12px;
+}
+
+.progress-bar {
+    border-radius: 12px;
+    font-size: 0.8rem;
+    line-height: 25px;
+}
+
+.text-success {
+    color: #198754 !important;
+}
+
+.text-danger {
+    color: #dc3545 !important;
+}
+
+/* NISA card styles */
+.nisa-limit-card {
+    text-align: center;
+    padding: 1rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .summary-card h3 {
+        font-size: 1.2rem;
+    }
+
+    .table {
+        font-size: 0.85rem;
+    }
+}
+
+/* Chart containers */
+canvas {
+    max-height: 300px;
+}
+
+/* Flash messages */
+.alert {
+    border: none;
+    border-radius: 8px;
+}

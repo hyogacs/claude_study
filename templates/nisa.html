@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}NISA管理 - 投資管理システム{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col">
+        <h2><i class="bi bi-shield-check"></i> NISA管理</h2>
+    </div>
+    <div class="col-auto">
+        {% if families %}
+        <select class="form-select" onchange="location.href='/nisa?family_id='+this.value">
+            {% for f in families %}
+            <option value="{{ f.id }}" {% if selected_family and f.id == selected_family.id %}selected{% endif %}>
+                {{ f.name }}
+            </option>
+            {% endfor %}
+        </select>
+        {% endif %}
+    </div>
+</div>
+
+{% if not families %}
+<div class="alert alert-info">
+    先に<a href="/family">家族管理</a>ページで家族を登録してください。
+</div>
+{% elif selected_family %}
+
+<!-- 新NISA制度の説明 -->
+<div class="card mb-4">
+    <div class="card-header">新NISA制度（2024年～）</div>
+    <div class="card-body">
+        <div class="row text-center">
+            <div class="col-md-3">
+                <div class="border rounded p-3">
+                    <h6>つみたて投資枠</h6>
+                    <h4 class="text-primary">年間120万円</h4>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="border rounded p-3">
+                    <h6>成長投資枠</h6>
+                    <h4 class="text-success">年間240万円</h4>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="border rounded p-3">
+                    <h6>年間投資枠合計</h6>
+                    <h4 class="text-info">年間360万円</h4>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="border rounded p-3">
+                    <h6>非課税保有限度額</h6>
+                    <h4 class="text-warning">生涯1,800万円</h4>
+                    <small class="text-muted">うち成長投資枠1,200万円</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- メンバー別NISA状況 -->
+{% for item in nisa_data %}
+<div class="card mb-4">
+    <div class="card-header">
+        <i class="bi bi-person"></i> {{ item.member.name }}（{{ item.member.relationship }}）
+    </div>
+    <div class="card-body">
+        <!-- 生涯利用状況 -->
+        <div class="row mb-3">
+            <div class="col-md-6">
+                <h6>非課税保有総額</h6>
+                <div class="progress mb-2" style="height: 25px;">
+                    {% set lifetime_pct = (item.summary.total_holding / 18000000 * 100) if item.summary.total_holding else 0 %}
+                    <div class="progress-bar bg-primary" style="width: {{ lifetime_pct }}%">
+                        {{ item.summary.total_holding | currency }} / ¥18,000,000
+                    </div>
+                </div>
+                <small class="text-muted">残り: {{ item.summary.lifetime_remaining | currency }}</small>
+            </div>
+            <div class="col-md-6">
+                <h6>成長投資枠（生涯）</h6>
+                <div class="progress mb-2" style="height: 25px;">
+                    {% set growth_lt_pct = ((12000000 - item.summary.growth_lifetime_remaining) / 12000000 * 100) %}
+                    <div class="progress-bar bg-success" style="width: {{ growth_lt_pct }}%">
+                        {{ (12000000 - item.summary.growth_lifetime_remaining) | currency }} / ¥12,000,000
+                    </div>
+                </div>
+                <small class="text-muted">残り: {{ item.summary.growth_lifetime_remaining | currency }}</small>
+            </div>
+        </div>
+
+        <!-- 年別利用状況 -->
+        {% if item.usages %}
+        <h6>年別利用状況</h6>
+        <table class="table table-sm table-hover">
+            <thead class="table-light">
+                <tr>
+                    <th>年度</th>
+                    <th class="text-end">つみたて投資枠</th>
+                    <th class="text-end">つみたて残り</th>
+                    <th class="text-end">成長投資枠</th>
+                    <th class="text-end">成長残り</th>
+                    <th class="text-end">年間合計</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for usage in item.usages %}
+                <tr>
+                    <td>{{ usage.year }}年</td>
+                    <td class="text-end">{{ usage.tsumitate_used | currency }}</td>
+                    <td class="text-end text-muted">{{ usage.tsumitate_remaining | currency }}</td>
+                    <td class="text-end">{{ usage.growth_used | currency }}</td>
+                    <td class="text-end text-muted">{{ usage.growth_remaining | currency }}</td>
+                    <td class="text-end fw-bold">{{ usage.annual_total_used | currency }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        <!-- NISA利用登録 -->
+        <div class="mt-3 p-3 bg-light rounded">
+            <h6>NISA利用状況を登録・更新</h6>
+            <form method="POST" action="/nisa/update" class="row g-2 align-items-end">
+                <input type="hidden" name="member_id" value="{{ item.member.id }}">
+                <div class="col-auto">
+                    <label class="form-label small">年度</label>
+                    <select class="form-select form-select-sm" name="year">
+                        {% for y in range(2024, 2035) %}
+                        <option value="{{ y }}">{{ y }}年</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <label class="form-label small">つみたて投資枠（円）</label>
+                    <input type="number" class="form-control form-control-sm" name="tsumitate_used"
+                           value="0" step="1000" min="0" max="1200000">
+                </div>
+                <div class="col-auto">
+                    <label class="form-label small">成長投資枠（円）</label>
+                    <input type="number" class="form-control form-control-sm" name="growth_used"
+                           value="0" step="1000" min="0" max="2400000">
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-sm btn-primary">
+                        <i class="bi bi-save"></i> 登録
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+{% if not nisa_data %}
+<div class="alert alert-info">
+    この家族にはメンバーがいません。<a href="/family">家族管理</a>ページでメンバーを追加してください。
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}

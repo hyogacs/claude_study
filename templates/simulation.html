@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% block title %}複利シミュレーション - 投資管理システム{% endblock %}
+
+{% block content %}
+<h2><i class="bi bi-calculator"></i> 複利シミュレーション</h2>
+
+<div class="row">
+    <div class="col-md-4">
+        <div class="card mb-4">
+            <div class="card-header">シミュレーション条件</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">初期投資額（円）</label>
+                    <input type="number" class="form-control" id="initialAmount" value="1000000" step="10000">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">毎月の積立額（円）</label>
+                    <input type="number" class="form-control" id="monthlyContribution" value="50000" step="1000">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">想定年利（%）</label>
+                    <input type="number" class="form-control" id="annualRate" value="5.0" step="0.1" min="0" max="30">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">運用年数</label>
+                    <input type="range" class="form-range" id="years" min="1" max="50" value="20">
+                    <span id="yearsLabel">20年</span>
+                </div>
+                <div class="mb-3 form-check">
+                    <input type="checkbox" class="form-check-input" id="isNisa">
+                    <label class="form-check-label">NISA口座（非課税）</label>
+                </div>
+                <button class="btn btn-primary w-100" onclick="runSimulation()">
+                    <i class="bi bi-play-circle"></i> シミュレーション実行
+                </button>
+            </div>
+        </div>
+
+        <!-- 結果サマリー -->
+        <div class="card mb-4" id="resultSummary" style="display:none">
+            <div class="card-header">シミュレーション結果</div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr>
+                        <td>最終資産額</td>
+                        <td class="text-end fw-bold" id="finalBalance">-</td>
+                    </tr>
+                    <tr>
+                        <td>投資元本合計</td>
+                        <td class="text-end" id="totalInvested">-</td>
+                    </tr>
+                    <tr>
+                        <td>運用益</td>
+                        <td class="text-end text-success" id="totalGain">-</td>
+                    </tr>
+                    <tr>
+                        <td>NISA vs 課税の差額</td>
+                        <td class="text-end text-primary" id="nisaDiff">-</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-8">
+        <div class="card mb-4">
+            <div class="card-header">資産推移グラフ</div>
+            <div class="card-body">
+                <canvas id="simulationChart" height="300"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">年別詳細</div>
+            <div class="card-body">
+                <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                    <table class="table table-sm table-hover">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th>年</th>
+                                <th class="text-end">資産残高</th>
+                                <th class="text-end">投資元本</th>
+                                <th class="text-end">運用益累計</th>
+                                <th class="text-end">年間運用益</th>
+                            </tr>
+                        </thead>
+                        <tbody id="yearlyTable">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let simChart = null;
+
+document.getElementById('years').addEventListener('input', function() {
+    document.getElementById('yearsLabel').textContent = this.value + '年';
+});
+
+function formatYen(val) {
+    return '¥' + Math.round(val).toLocaleString();
+}
+
+function runSimulation() {
+    const data = {
+        initial_amount: parseFloat(document.getElementById('initialAmount').value) || 0,
+        monthly_contribution: parseFloat(document.getElementById('monthlyContribution').value) || 0,
+        annual_rate: parseFloat(document.getElementById('annualRate').value) || 5,
+        years: parseInt(document.getElementById('years').value) || 20,
+        is_nisa: document.getElementById('isNisa').checked,
+    };
+
+    fetch('/api/simulation', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data),
+    })
+    .then(r => r.json())
+    .then(result => {
+        const sim = result.simulation;
+        const taxed = result.comparison.taxed;
+        const nisa = result.comparison.nisa;
+        const last = sim[sim.length - 1];
+        const lastNisa = nisa[nisa.length - 1];
+        const lastTaxed = taxed[taxed.length - 1];
+
+        // Summary
+        document.getElementById('resultSummary').style.display = 'block';
+        document.getElementById('finalBalance').textContent = formatYen(last.balance);
+        document.getElementById('totalInvested').textContent = formatYen(last.total_invested);
+        document.getElementById('totalGain').textContent = formatYen(last.total_gain);
+        document.getElementById('nisaDiff').textContent = formatYen(lastNisa.balance - lastTaxed.balance);
+
+        // Chart
+        const labels = sim.map(d => d.year + '年');
+        if (simChart) simChart.destroy();
+        simChart = new Chart(document.getElementById('simulationChart'), {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'NISA（非課税）',
+                        data: nisa.map(d => d.balance),
+                        borderColor: '#198754',
+                        backgroundColor: 'rgba(25,135,84,0.1)',
+                        fill: true,
+                    },
+                    {
+                        label: '課税口座',
+                        data: taxed.map(d => d.balance),
+                        borderColor: '#dc3545',
+                        backgroundColor: 'rgba(220,53,69,0.1)',
+                        fill: true,
+                    },
+                    {
+                        label: '投資元本',
+                        data: sim.map(d => d.total_invested),
+                        borderColor: '#6c757d',
+                        borderDash: [5, 5],
+                        fill: false,
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                return ctx.dataset.label + ': ' + formatYen(ctx.raw);
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        ticks: {
+                            callback: function(val) {
+                                if (val >= 100000000) return (val / 100000000).toFixed(1) + '億';
+                                if (val >= 10000) return (val / 10000).toFixed(0) + '万';
+                                return val;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Table
+        const tbody = document.getElementById('yearlyTable');
+        tbody.innerHTML = '';
+        sim.forEach(d => {
+            tbody.innerHTML += `<tr>
+                <td>${d.year}年目</td>
+                <td class="text-end">${formatYen(d.balance)}</td>
+                <td class="text-end">${formatYen(d.total_invested)}</td>
+                <td class="text-end text-success">${formatYen(d.total_gain)}</td>
+                <td class="text-end">${formatYen(d.yearly_interest)}</td>
+            </tr>`;
+        });
+    });
+}
+
+// Run on page load
+document.addEventListener('DOMContentLoaded', runSimulation);
+</script>
+{% endblock %}
