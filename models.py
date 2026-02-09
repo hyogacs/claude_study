@@ -116,6 +116,18 @@ class NISAUsage(db.Model):
         return max(0, self.TOTAL_LIFETIME_LIMIT - self.total_holding)
 
 
+class Goal(db.Model):
+    """資産目標"""
+    id = db.Column(db.Integer, primary_key=True)
+    family_id = db.Column(db.Integer, db.ForeignKey('family.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    target_amount = db.Column(db.Float, nullable=False)
+    goal_type = db.Column(db.String(30), default='total')  # total, fire, custom
+    target_date = db.Column(db.Date, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    family = db.relationship('Family', backref='goals')
+
+
 class PortfolioSnapshot(db.Model):
     """資産推移スナップショット"""
     id = db.Column(db.Integer, primary_key=True)

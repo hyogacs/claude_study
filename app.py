@@ -4,7 +4,7 @@ import csv
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, Response
 from models import (
     db, Family, FamilyMember, Account, Holding, Transaction,
-    NISAUsage, PortfolioSnapshot, Dividend, RealizedGain,
+    NISAUsage, PortfolioSnapshot, Dividend, RealizedGain, Goal,
 )
 from csv_parsers import parse_sbi_holdings, parse_moomoo_holdings, parse_sbi_transactions
 from calculators import (
@@ -16,6 +16,7 @@ from calculators import (
 )
 from datetime import datetime, date
 from exchange_rates import get_exchange_rates, convert_to_jpy, get_rate_display
+from stock_api import fetch_stock_price, fetch_stock_prices_batch, fetch_dividend_info, get_dividend_schedule
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
@@ -93,7 +94,7 @@ def dashboard():
 
     if not families:
         return render_template('dashboard.html', families=families, selected_family=None,
-                               summary=None, rate_info=rate_info)
+                               summary=None, rate_info=rate_info, goals=[])
 
     selected_family = None
     if family_id:
@@ -129,9 +130,20 @@ def dashboard():
         'broker_allocation': broker_alloc,
     }
 
+    goals = Goal.query.filter_by(family_id=selected_family.id).all()
+    goals_data = []
+    for g in goals:
+        pct = (summary['total_value'] / g.target_amount * 100) if g.target_amount > 0 else 0
+        goals_data.append({
+            'goal': g,
+            'current': summary['total_value'],
+            'percent': round(min(pct, 100), 1),
+            'remaining': max(0, g.target_amount - summary['total_value']),
+        })
+
     return render_template('dashboard.html', families=families,
                            selected_family=selected_family, summary=summary,
-                           rate_info=rate_info)
+                           rate_info=rate_info, goals=goals_data)
 
 
 # ── 家族管理 ──────────────────────────────────
@@ -881,6 +893,163 @@ def api_snapshot():
         _take_snapshot(family_id)
         return jsonify({'success': True})
     return jsonify({'error': 'family_id required'}), 400
+
+
+# ── 目標管理 ──────────────────────────────────
+@app.route('/goal/add', methods=['POST'])
+def goal_add():
+    family_id = request.form.get('family_id', type=int)
+    if not family_id:
+        flash('家族を選択してください', 'error')
+        return redirect(url_for('dashboard'))
+
+    goal = Goal(
+        family_id=family_id,
+        name=request.form.get('name', 'FIRE目標').strip(),
+        target_amount=float(request.form.get('target_amount', 0)),
+        goal_type=request.form.get('goal_type', 'total').strip(),
+        target_date=datetime.strptime(request.form['target_date'], '%Y-%m-%d').date()
+            if request.form.get('target_date') else None,
+    )
+    db.session.add(goal)
+    db.session.commit()
+    flash(f'目標「{goal.name}」を追加しました', 'success')
+    return redirect(url_for('dashboard', family_id=family_id))
+
+
+@app.route('/goal/<int:goal_id>/delete', methods=['POST'])
+def goal_delete(goal_id):
+    goal = Goal.query.get_or_404(goal_id)
+    family_id = goal.family_id
+    db.session.delete(goal)
+    db.session.commit()
+    flash('目標を削除しました', 'success')
+    return redirect(url_for('dashboard', family_id=family_id))
+
+
+# ── 株価自動更新 ────────────────────────────────
+@app.route('/api/refresh_prices', methods=['POST'])
+def api_refresh_prices():
+    """保有銘柄の株価を一括更新する"""
+    data = request.get_json() or {}
+    family_id = data.get('family_id')
+
+    if family_id:
+        family = Family.query.get(family_id)
+        if not family:
+            return jsonify({'error': '家族が見つかりません'}), 404
+        holdings = _get_family_holdings(family)
+    else:
+        holdings = Holding.query.all()
+
+    updated = 0
+    failed = 0
+    results = []
+
+    for h in holdings:
+        if not h.symbol:
+            continue
+
+        stock_data = fetch_stock_price(h.symbol, h.currency)
+        if stock_data and stock_data['price'] > 0:
+            old_price = h.current_price
+            h.current_price = stock_data['price']
+            h.updated_at = datetime.utcnow()
+            updated += 1
+            results.append({
+                'name': h.name,
+                'symbol': h.symbol,
+                'old_price': old_price,
+                'new_price': stock_data['price'],
+                'change_pct': stock_data.get('change_pct', 0),
+            })
+        else:
+            failed += 1
+
+    if updated > 0:
+        db.session.commit()
+        # スナップショットも更新
+        if family_id:
+            _take_snapshot(family_id)
+
+    return jsonify({
+        'updated': updated,
+        'failed': failed,
+        'results': results,
+        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M'),
+    })
+
+
+@app.route('/api/refresh_price/<int:holding_id>', methods=['POST'])
+def api_refresh_single_price(holding_id):
+    """個別銘柄の株価を更新する"""
+    h = Holding.query.get_or_404(holding_id)
+
+    if not h.symbol:
+        return jsonify({'error': '銘柄コードがありません'}), 400
+
+    stock_data = fetch_stock_price(h.symbol, h.currency)
+    if not stock_data or stock_data['price'] <= 0:
+        return jsonify({'error': '株価の取得に失敗しました'}), 502
+
+    old_price = h.current_price
+    h.current_price = stock_data['price']
+    h.updated_at = datetime.utcnow()
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'old_price': old_price,
+        'new_price': stock_data['price'],
+        'change': stock_data.get('change', 0),
+        'change_pct': stock_data.get('change_pct', 0),
+        'market_state': stock_data.get('market_state', ''),
+        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M'),
+    })
+
+
+# ── 配当情報取得 ────────────────────────────────
+@app.route('/api/dividend_info/<int:holding_id>')
+def api_dividend_info(holding_id):
+    """銘柄の配当情報を取得する"""
+    h = Holding.query.get_or_404(holding_id)
+
+    if not h.symbol:
+        return jsonify({'error': '銘柄コードがありません'}), 400
+
+    # まずAPIから取得を試行
+    info = fetch_dividend_info(h.symbol, h.currency)
+
+    if info:
+        return jsonify({
+            'source': 'api',
+            'dividend_yield': info['dividend_yield'],
+            'annual_dividend': info['annual_dividend'],
+            'ex_dividend_date': info['ex_dividend_date'],
+            'payment_months': info['payment_months'],
+            'frequency': info['frequency'],
+            'currency': info.get('currency', h.currency),
+        })
+
+    # フォールバック: 既知のスケジュール
+    schedule = get_dividend_schedule(h.symbol)
+    if schedule:
+        return jsonify({
+            'source': 'known',
+            'dividend_yield': None,
+            'annual_dividend': None,
+            'ex_dividend_date': None,
+            'payment_months': schedule['months'],
+            'frequency': schedule['frequency'],
+            'currency': h.currency,
+        })
+
+    return jsonify({
+        'source': 'none',
+        'error': '配当情報が取得できませんでした',
+        'payment_months': [],
+        'frequency': '不明',
+    })
 
 
 if __name__ == '__main__':

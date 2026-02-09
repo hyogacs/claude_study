@@ -9,8 +9,18 @@
         </a>
         {{ holding.name }}
     </h1>
-    <span class="badge-apple badge-asset">{{ holding.asset_class }}</span>
+    <div style="display: flex; align-items: center; gap: 8px;">
+        <span class="badge-apple badge-asset">{{ holding.asset_class }}</span>
+        {% if holding.symbol %}
+        <button class="btn-apple btn-apple-secondary btn-apple-sm" id="refreshBtn" onclick="refreshPrice({{ holding.id }})">
+            <i class="bi bi-arrow-clockwise"></i> 株価更新
+        </button>
+        {% endif %}
+    </div>
 </div>
+
+<!-- 株価更新結果 -->
+<div id="refreshResult" style="display: none; margin-bottom: 16px;"></div>
 
 <!-- 基本情報 -->
 <div class="grid-4" style="margin-bottom: 24px;">
@@ -39,24 +49,43 @@
 </div>
 
 <div class="grid-2">
-    <!-- 詳細情報 -->
-    <div class="card-apple" style="margin-bottom: 20px;">
-        <div class="card-apple-header">詳細情報</div>
-        <div class="card-apple-body" style="padding: 0;">
-            <table class="table-apple">
-                <tbody>
-                    <tr><td style="font-weight:600;">銘柄コード</td><td style="font-family:monospace;">{{ holding.symbol }}</td></tr>
-                    <tr><td style="font-weight:600;">証券会社</td><td>{{ holding.account.broker }}</td></tr>
-                    <tr><td style="font-weight:600;">口座</td><td>{{ holding.account.account_name }}</td></tr>
-                    <tr><td style="font-weight:600;">メンバー</td><td>{{ holding.account.member.name }}</td></tr>
-                    <tr><td style="font-weight:600;">通貨</td><td>{{ holding.currency }}</td></tr>
-                    <tr><td style="font-weight:600;">取得単価</td><td>{{ holding.avg_cost | currency(holding.currency) }}</td></tr>
-                    <tr><td style="font-weight:600;">現在値</td><td>{{ holding.current_price | currency(holding.currency) }}</td></tr>
-                    <tr><td style="font-weight:600;">NISA</td><td>{% if holding.is_nisa %}<span class="badge-apple badge-nisa">NISA</span>{% else %}対象外{% endif %}</td></tr>
-                    <tr><td style="font-weight:600;">最終更新</td><td>{{ holding.updated_at.strftime('%Y-%m-%d %H:%M') if holding.updated_at else '-' }}</td></tr>
-                </tbody>
-            </table>
+    <div>
+        <!-- 詳細情報 -->
+        <div class="card-apple" style="margin-bottom: 20px;">
+            <div class="card-apple-header">詳細情報</div>
+            <div class="card-apple-body" style="padding: 0;">
+                <table class="table-apple">
+                    <tbody>
+                        <tr><td style="font-weight:600;">銘柄コード</td><td style="font-family:monospace;">{{ holding.symbol }}</td></tr>
+                        <tr><td style="font-weight:600;">証券会社</td><td>{{ holding.account.broker }}</td></tr>
+                        <tr><td style="font-weight:600;">口座</td><td>{{ holding.account.account_name }}</td></tr>
+                        <tr><td style="font-weight:600;">メンバー</td><td>{{ holding.account.member.name }}</td></tr>
+                        <tr><td style="font-weight:600;">通貨</td><td>{{ holding.currency }}</td></tr>
+                        <tr><td style="font-weight:600;">取得単価</td><td>{{ holding.avg_cost | currency(holding.currency) }}</td></tr>
+                        <tr><td style="font-weight:600;">現在値</td><td id="currentPrice">{{ holding.current_price | currency(holding.currency) }}</td></tr>
+                        <tr><td style="font-weight:600;">NISA</td><td>{% if holding.is_nisa %}<span class="badge-apple badge-nisa">NISA</span>{% else %}対象外{% endif %}</td></tr>
+                        <tr><td style="font-weight:600;">最終更新</td><td id="lastUpdate">{{ holding.updated_at.strftime('%Y-%m-%d %H:%M') if holding.updated_at else '-' }}</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
+
+        <!-- 配当情報 -->
+        {% if holding.symbol %}
+        <div class="card-apple" style="margin-bottom: 20px;">
+            <div class="card-apple-header">
+                <i class="bi bi-cash-coin"></i> 配当情報
+                <button class="btn-apple btn-apple-secondary btn-apple-sm" style="float: right;" onclick="loadDividendInfo({{ holding.id }})">
+                    <i class="bi bi-arrow-clockwise"></i> 取得
+                </button>
+            </div>
+            <div class="card-apple-body" id="dividendInfoArea">
+                <div style="text-align: center; padding: 10px; color: var(--text-secondary); font-size: 0.88rem;">
+                    「取得」ボタンを押すと配当情報をAPIから取得します。
+                </div>
+            </div>
+        </div>
+        {% endif %}
     </div>
 
     <div>
@@ -110,4 +139,104 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function refreshPrice(holdingId) {
+    const btn = document.getElementById('refreshBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 更新中...';
+
+    fetch('/api/refresh_price/' + holdingId, { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> 株価更新';
+
+        const resultDiv = document.getElementById('refreshResult');
+        if (data.success) {
+            const changePct = data.change_pct;
+            const changeClass = changePct >= 0 ? 'text-positive' : 'text-negative';
+            const changeSign = changePct >= 0 ? '+' : '';
+
+            resultDiv.innerHTML = '<div class="alert-apple alert-success">' +
+                '<span><i class="bi bi-check-circle-fill"></i> 株価を更新しました: ' +
+                data.old_price.toLocaleString() + ' → ' + data.new_price.toLocaleString() +
+                ' (<span class="' + changeClass + '">' + changeSign + changePct.toFixed(2) + '%</span>) ' +
+                data.timestamp + '</span>' +
+                '<button class="alert-close" onclick="this.parentElement.style.display=\'none\'">&times;</button></div>';
+            resultDiv.style.display = '';
+
+            // ページを2秒後にリロード
+            setTimeout(() => location.reload(), 2000);
+        } else {
+            resultDiv.innerHTML = '<div class="alert-apple alert-error">' +
+                '<span><i class="bi bi-exclamation-circle-fill"></i> ' + (data.error || '株価の取得に失敗しました') + '</span>' +
+                '<button class="alert-close" onclick="this.parentElement.style.display=\'none\'">&times;</button></div>';
+            resultDiv.style.display = '';
+        }
+    })
+    .catch(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> 株価更新';
+        alert('通信エラーが発生しました');
+    });
+}
+
+function loadDividendInfo(holdingId) {
+    const area = document.getElementById('dividendInfoArea');
+    area.innerHTML = '<div style="text-align: center; padding: 16px; color: var(--text-secondary);"><i class="bi bi-hourglass-split"></i> 取得中...</div>';
+
+    fetch('/api/dividend_info/' + holdingId)
+    .then(r => r.json())
+    .then(data => {
+        if (data.error && data.source === 'none') {
+            area.innerHTML = '<div style="text-align: center; padding: 16px; color: var(--text-secondary); font-size: 0.88rem;">' +
+                '<i class="bi bi-info-circle"></i> ' + data.error + '</div>';
+            return;
+        }
+
+        const monthNames = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+        let monthsHtml = '';
+        if (data.payment_months && data.payment_months.length > 0) {
+            monthsHtml = '<div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px;">';
+            for (let m = 1; m <= 12; m++) {
+                const active = data.payment_months.includes(m);
+                const style = active
+                    ? 'background: var(--accent); color: #fff; font-weight: 600;'
+                    : 'background: rgba(0,0,0,0.04); color: var(--text-secondary);';
+                monthsHtml += '<span style="' + style + ' padding: 4px 10px; border-radius: 6px; font-size: 0.75rem;">' + m + '月</span>';
+            }
+            monthsHtml += '</div>';
+        }
+
+        let sourceLabel = '';
+        if (data.source === 'api') sourceLabel = '<span style="color: var(--green); font-size: 0.72rem;"><i class="bi bi-check-circle-fill"></i> API</span>';
+        else if (data.source === 'known') sourceLabel = '<span style="color: var(--orange); font-size: 0.72rem;"><i class="bi bi-database"></i> 参考データ</span>';
+
+        let html = '<table class="table-apple"><tbody>';
+        html += '<tr><td style="font-weight:600;">データソース</td><td>' + sourceLabel + '</td></tr>';
+
+        if (data.dividend_yield !== null && data.dividend_yield !== undefined) {
+            html += '<tr><td style="font-weight:600;">配当利回り</td><td style="color: var(--green); font-weight: 700;">' + data.dividend_yield.toFixed(2) + '%</td></tr>';
+        }
+        if (data.annual_dividend !== null && data.annual_dividend !== undefined && data.annual_dividend > 0) {
+            html += '<tr><td style="font-weight:600;">年間配当額</td><td>' + data.annual_dividend.toLocaleString(undefined, {maximumFractionDigits: 2}) + ' ' + (data.currency || '') + '</td></tr>';
+        }
+        if (data.ex_dividend_date) {
+            html += '<tr><td style="font-weight:600;">権利落ち日</td><td>' + data.ex_dividend_date + '</td></tr>';
+        }
+        html += '<tr><td style="font-weight:600;">配当頻度</td><td>' + (data.frequency || '不明') + '</td></tr>';
+        html += '<tr><td style="font-weight:600;">配当支払月</td><td>' + (data.payment_months && data.payment_months.length > 0 ? '' : '情報なし') + '</td></tr>';
+        html += '</tbody></table>';
+        html += monthsHtml;
+
+        area.innerHTML = html;
+    })
+    .catch(() => {
+        area.innerHTML = '<div style="text-align: center; padding: 16px; color: var(--red); font-size: 0.88rem;">通信エラーが発生しました</div>';
+    });
+}
+</script>
 {% endblock %}
