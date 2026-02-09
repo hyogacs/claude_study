@@ -180,17 +180,21 @@ def import_upload():
 
 def _get_or_create_account(member, broker, account_type, nisa_type=''):
     """口座を取得、なければ作成する"""
+    name_parts = [broker, account_type]
+    if nisa_type:
+        name_parts.append(nisa_type)
+    account_name = ' '.join(name_parts) + '口座'
+
+    # account_nameで検索することで、NISA成長とNISAつみたてを区別する
     account = Account.query.filter_by(
-        member_id=member.id, broker=broker, account_type=account_type
+        member_id=member.id, broker=broker, account_type=account_type,
+        account_name=account_name
     ).first()
     if not account:
-        name_parts = [broker, account_type]
-        if nisa_type:
-            name_parts.append(nisa_type)
         account = Account(
             member_id=member.id, broker=broker,
             account_type=account_type,
-            account_name=' '.join(name_parts) + '口座'
+            account_name=account_name
         )
         db.session.add(account)
         db.session.flush()
