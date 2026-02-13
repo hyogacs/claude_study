@@ -322,7 +322,8 @@ document.addEventListener('DOMContentLoaded', function() {
     {% if by_stock %}
     const stockLabels = [{% for s in by_stock %}'{{ s.symbol or s.name }}'{{ ',' if not loop.last }}{% endfor %}];
     const stockValues = [{% for s in by_stock %}{{ s.amount | round(0) }}{{ ',' if not loop.last }}{% endfor %}];
-    createPieChart('dividendPieChart', stockLabels, stockValues, '予想配当金額');
+    const stockNames = [{% for s in by_stock %}'{{ s.name }}'{{ ',' if not loop.last }}{% endfor %}];
+    createPieChart('dividendPieChart', stockLabels, stockValues, '予想配当金額', stockNames);
     {% endif %}
 });
 

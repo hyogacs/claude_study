@@ -4,7 +4,7 @@ import csv
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, Response
 from models import (
     db, Family, FamilyMember, Account, Holding, Transaction,
-    NISAUsage, PortfolioSnapshot, Dividend, DividendSchedule, RealizedGain, Goal,
+    NISAUsage, PortfolioSnapshot, Dividend, DividendSchedule, Goal,
 )
 from csv_parsers import parse_sbi_holdings, parse_moomoo_holdings, parse_sbi_transactions
 from calculators import (
@@ -443,7 +443,7 @@ def assets():
     rates, _ = get_exchange_rates()
 
     return render_template('assets.html', holdings=holdings, families=families,
-                           members=members, accounts=accounts,
+                           members=members,
                            selected_family_id=family_id,
                            selected_member_id=member_id, rates=rates)
 
@@ -490,30 +490,6 @@ def holding_delete(holding_id):
     db.session.delete(holding)
     db.session.commit()
     flash(f'「{name}」を削除しました', 'success')
-    return redirect(url_for('assets'))
-
-
-@app.route('/holding/add', methods=['POST'])
-def holding_add():
-    account_id = request.form.get('account_id', type=int)
-    if not account_id:
-        flash('口座を選択してください', 'error')
-        return redirect(url_for('assets'))
-
-    holding = Holding(
-        account_id=account_id,
-        symbol=request.form.get('symbol', '').strip(),
-        name=request.form.get('name', '').strip(),
-        asset_class=request.form.get('asset_class', '不明').strip(),
-        quantity=float(request.form.get('quantity', 0)),
-        avg_cost=float(request.form.get('avg_cost', 0)),
-        current_price=float(request.form.get('current_price', 0)),
-        currency=request.form.get('currency', 'JPY').strip(),
-        is_nisa=bool(request.form.get('is_nisa')),
-    )
-    db.session.add(holding)
-    db.session.commit()
-    flash(f'「{holding.name}」を追加しました', 'success')
     return redirect(url_for('assets'))
 
 
@@ -888,72 +864,6 @@ def dividend_delete(dividend_id):
     return redirect(url_for('dividends'))
 
 
-# ── 実現損益管理 ──────────────────────────────
-@app.route('/realized-gains')
-def realized_gains():
-    family_id = request.args.get('family_id', type=int)
-    year = request.args.get('year', type=int, default=date.today().year)
-
-    query = RealizedGain.query.join(Account).join(FamilyMember)
-    if family_id:
-        query = query.filter(FamilyMember.family_id == family_id)
-
-    all_gains = query.order_by(RealizedGain.trade_date.desc()).all()
-    year_gains = [g for g in all_gains
-                  if g.trade_date and g.trade_date.year == year]
-
-    rates, _ = get_exchange_rates()
-    total_pnl = sum(convert_to_jpy(g.realized_pnl, g.currency, rates) for g in year_gains)
-    total_proceeds = sum(convert_to_jpy(g.proceeds, g.currency, rates) for g in year_gains)
-    total_cost = sum(convert_to_jpy(g.cost_basis, g.currency, rates) for g in year_gains)
-
-    families = Family.query.all()
-    accounts = Account.query.all()
-
-    years_set = set()
-    for g in all_gains:
-        if g.trade_date:
-            years_set.add(g.trade_date.year)
-    years_set.add(date.today().year)
-    available_years = sorted(years_set, reverse=True)
-
-    return render_template('realized_gains.html', gains=year_gains,
-                           families=families, accounts=accounts,
-                           selected_family_id=family_id, current_year=year,
-                           available_years=available_years,
-                           total_pnl=total_pnl, total_proceeds=total_proceeds,
-                           total_cost=total_cost, rates=rates)
-
-
-@app.route('/realized-gain/add', methods=['POST'])
-def realized_gain_add():
-    g = RealizedGain(
-        account_id=int(request.form['account_id']),
-        symbol=request.form.get('symbol', '').strip(),
-        name=request.form.get('name', '').strip(),
-        quantity=float(request.form.get('quantity', 0)),
-        buy_price=float(request.form.get('buy_price', 0)),
-        sell_price=float(request.form.get('sell_price', 0)),
-        currency=request.form.get('currency', 'JPY').strip(),
-        trade_date=datetime.strptime(request.form['trade_date'], '%Y-%m-%d').date(),
-        fees=float(request.form.get('fees', 0)),
-        is_nisa=bool(request.form.get('is_nisa')),
-    )
-    db.session.add(g)
-    db.session.commit()
-    flash(f'実現損益「{g.name}」を追加しました', 'success')
-    return redirect(url_for('realized_gains'))
-
-
-@app.route('/realized-gain/<int:gain_id>/delete', methods=['POST'])
-def realized_gain_delete(gain_id):
-    g = RealizedGain.query.get_or_404(gain_id)
-    db.session.delete(g)
-    db.session.commit()
-    flash('実現損益を削除しました', 'success')
-    return redirect(url_for('realized_gains'))
-
-
 # ── データエクスポート ─────────────────────────
 @app.route('/export/holdings')
 def export_holdings():
@@ -1012,33 +922,6 @@ def export_dividends():
         output.getvalue().encode('utf-8-sig'),
         mimetype='text/csv',
         headers={'Content-Disposition': f'attachment; filename=dividends_{year}.csv'}
-    )
-
-
-@app.route('/export/realized-gains')
-def export_realized_gains():
-    year = request.args.get('year', type=int, default=date.today().year)
-    gains = RealizedGain.query.join(Account).join(FamilyMember).order_by(RealizedGain.trade_date.desc()).all()
-    gains = [g for g in gains if g.trade_date and g.trade_date.year == year]
-
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(['取引日', 'メンバー', '証券会社', '銘柄コード', '銘柄名',
-                     '数量', '買付単価', '売却単価', '実現損益', '手数料', '通貨', 'NISA'])
-    for g in gains:
-        writer.writerow([
-            g.trade_date.isoformat(), g.account.member.name, g.account.broker,
-            g.symbol, g.name,
-            f'{g.quantity:.2f}', f'{g.buy_price:.4f}', f'{g.sell_price:.4f}',
-            f'{g.realized_pnl:.2f}', f'{g.fees:.2f}',
-            g.currency, 'NISA' if g.is_nisa else '',
-        ])
-
-    output.seek(0)
-    return Response(
-        output.getvalue().encode('utf-8-sig'),
-        mimetype='text/csv',
-        headers={'Content-Disposition': f'attachment; filename=realized_gains_{year}.csv'}
     )
 
 

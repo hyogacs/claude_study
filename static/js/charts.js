@@ -13,7 +13,7 @@ function formatYenShort(val) {
     return '¥' + Math.round(val).toLocaleString();
 }
 
-function createPieChart(canvasId, labels, values, title) {
+function createPieChart(canvasId, labels, values, title, names) {
     const ctx = document.getElementById(canvasId);
     if (!ctx) return null;
 
@@ -47,7 +47,9 @@ function createPieChart(canvasId, labels, values, title) {
                     callbacks: {
                         label: function(ctx) {
                             const pct = ((ctx.raw / total) * 100).toFixed(1);
-                            return ctx.label + ': ' + formatYenShort(ctx.raw) + ' (' + pct + '%)';
+                            const name = names ? names[ctx.dataIndex] : '';
+                            const display = name ? ctx.label + ' ' + name : ctx.label;
+                            return display + ': ' + formatYenShort(ctx.raw) + ' (' + pct + '%)';
                         },
                     },
                 },

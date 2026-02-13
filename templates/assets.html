@@ -23,8 +23,8 @@
                 {% endfor %}
             </select>
         </form>
-        <button class="btn-apple btn-apple-secondary btn-apple-sm" onclick="document.getElementById('addHoldingModal').style.display='flex'">
-            <i class="bi bi-plus-circle"></i> 手動追加
+        <button class="btn-apple btn-apple-primary btn-apple-sm" id="btnRefreshPrices" onclick="refreshAllPrices()">
+            <i class="bi bi-cloud-download"></i> 株価一括更新
         </button>
         <a href="/export/holdings{% if selected_family_id %}?family_id={{ selected_family_id }}{% endif %}" class="btn-apple btn-apple-secondary btn-apple-sm">
             <i class="bi bi-download"></i> CSV出力
@@ -61,7 +61,7 @@
             </thead>
             <tbody id="holdingsBody">
                 {% for h in holdings %}
-                <tr data-search="{{ h.name }} {{ h.symbol }} {{ h.asset_class }} {{ h.account.broker }}">
+                <tr data-search="{{ h.name }} {{ h.symbol }} {{ h.asset_class }} {{ h.account.broker }}" id="hrow-{{ h.id }}">
                     <td><span class="badge-apple badge-{{ 'sbi' if h.account.broker == 'SBI' else 'moomoo' }}">{{ h.account.broker }}</span></td>
                     <td>{{ h.account.account_type }}</td>
                     <td style="font-family: monospace; font-size: 0.82rem;">{{ h.symbol }}</td>
@@ -79,6 +79,10 @@
                     </td>
                     <td>{% if h.is_nisa %}<span class="badge-apple badge-nisa">NISA</span>{% endif %}</td>
                     <td style="text-align: right;">
+                        <button class="btn-apple btn-apple-secondary btn-apple-sm" style="padding: 2px 6px; font-size: 0.72rem;"
+                                onclick="refreshSinglePrice({{ h.id }}, '{{ h.symbol }}')" title="株価更新">
+                            <i class="bi bi-cloud-download"></i>
+                        </button>
                         <button class="btn-apple btn-apple-secondary btn-apple-sm" style="padding: 2px 6px; font-size: 0.72rem;"
                                 onclick="openEditModal({{ h.id }}, '{{ h.name }}', '{{ h.symbol }}', '{{ h.asset_class }}', {{ h.quantity }}, {{ h.avg_cost }}, {{ h.current_price }}, '{{ h.currency }}')">
                             <i class="bi bi-pencil"></i>
@@ -115,73 +119,6 @@
     資産データがありません。<a href="/import">CSV導入</a>ページからデータをインポートしてください。
 </div>
 {% endif %}
-
-<!-- 手動追加モーダル -->
-<div id="addHoldingModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:100; justify-content:center; align-items:center;">
-    <div class="card-apple" style="width: 480px; max-height: 90vh; overflow-y: auto;">
-        <div class="card-apple-header" style="display:flex; justify-content:space-between;">
-            <span>保有資産を手動追加</span>
-            <button onclick="this.closest('#addHoldingModal').style.display='none'" style="background:none;border:none;font-size:1.2rem;cursor:pointer;">&times;</button>
-        </div>
-        <div class="card-apple-body">
-            <form method="POST" action="/holding/add">
-                <div style="margin-bottom: 12px;">
-                    <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">口座</label>
-                    <select class="form-select" name="account_id" required>
-                        {% for a in accounts %}
-                        <option value="{{ a.id }}">{{ a.member.name }} - {{ a.account_name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="grid-2" style="margin-bottom: 12px;">
-                    <div>
-                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">銘柄名</label>
-                        <input type="text" class="form-control" name="name" required>
-                    </div>
-                    <div>
-                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">銘柄コード</label>
-                        <input type="text" class="form-control" name="symbol">
-                    </div>
-                </div>
-                <div class="grid-2" style="margin-bottom: 12px;">
-                    <div>
-                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">資産クラス</label>
-                        <select class="form-select" name="asset_class">
-                            <option>日本株式</option><option>米国株式</option><option>投資信託</option>
-                            <option>国内債券</option><option>外国株式</option><option>貴金属</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">通貨</label>
-                        <select class="form-select" name="currency">
-                            <option>JPY</option><option>USD</option><option>HKD</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="grid-3" style="margin-bottom: 12px;">
-                    <div>
-                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">数量</label>
-                        <input type="number" class="form-control" name="quantity" step="0.01" required>
-                    </div>
-                    <div>
-                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">取得単価</label>
-                        <input type="number" class="form-control" name="avg_cost" step="0.0001" required>
-                    </div>
-                    <div>
-                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">現在値</label>
-                        <input type="number" class="form-control" name="current_price" step="0.0001" required>
-                    </div>
-                </div>
-                <div style="margin-bottom: 16px;">
-                    <label style="display:flex;align-items:center;gap:6px;font-size:0.88rem;">
-                        <input type="checkbox" name="is_nisa" value="1"> NISA口座
-                    </label>
-                </div>
-                <button type="submit" class="btn-apple btn-apple-primary" style="width:100%;">追加</button>
-            </form>
-        </div>
-    </div>
-</div>
 
 <!-- 編集モーダル -->
 <div id="editHoldingModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:100; justify-content:center; align-items:center;">
@@ -231,6 +168,9 @@
         </div>
     </div>
 </div>
+
+<!-- ステータス表示 -->
+<div id="priceStatus" style="display:none; position:fixed; bottom: 24px; right: 24px; z-index: 1000; max-width: 420px;"></div>
 {% endblock %}
 
 {% block scripts %}
@@ -253,6 +193,80 @@ function openEditModal(id, name, symbol, assetClass, qty, avgCost, price, curren
     document.getElementById('editCurrentPrice').value = price;
     document.getElementById('editCurrency').value = currency;
     document.getElementById('editHoldingModal').style.display = 'flex';
+}
+
+function showPriceStatus(html, type) {
+    const el = document.getElementById('priceStatus');
+    el.style.display = 'block';
+    el.innerHTML = '<div class="card-apple" style="box-shadow: 0 8px 32px rgba(0,0,0,0.18); border-left: 4px solid ' +
+        (type === 'success' ? 'var(--green)' : type === 'error' ? 'var(--red)' : 'var(--accent)') + ';">' +
+        '<div class="card-apple-body" style="padding: 14px 18px; font-size: 0.88rem;">' + html + '</div></div>';
+    if (type !== 'loading') {
+        setTimeout(function() { el.style.display = 'none'; }, 5000);
+    }
+}
+
+function refreshAllPrices() {
+    const btn = document.getElementById('btnRefreshPrices');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 更新中...';
+    showPriceStatus('<i class="bi bi-hourglass-split"></i> 株価を取得中です...', 'loading');
+
+    const familyId = '{{ selected_family_id or "" }}';
+    fetch('/api/refresh_prices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ family_id: familyId || null }),
+    })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-cloud-download"></i> 株価一括更新';
+
+        let html = '<b>' + data.updated + '件更新成功</b>';
+        if (data.failed > 0) html += '、<span style="color:var(--red);">' + data.failed + '件失敗</span>';
+        if (data.results && data.results.length > 0) {
+            html += '<div style="margin-top: 8px; max-height: 200px; overflow-y: auto; font-size: 0.78rem;">';
+            data.results.forEach(function(r) {
+                const color = r.change_pct >= 0 ? 'var(--green)' : 'var(--red)';
+                const sign = r.change_pct >= 0 ? '+' : '';
+                html += '<div style="display:flex;justify-content:space-between;padding:2px 0;border-top:1px solid var(--border);">';
+                html += '<span>' + r.symbol + ' ' + r.name + '</span>';
+                html += '<span style="color:' + color + ';">' + sign + r.change_pct.toFixed(2) + '%</span>';
+                html += '</div>';
+            });
+            html += '</div>';
+        }
+        showPriceStatus(html, data.failed > 0 && data.updated === 0 ? 'error' : 'success');
+        setTimeout(function() { location.reload(); }, 3000);
+    })
+    .catch(function() {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-cloud-download"></i> 株価一括更新';
+        showPriceStatus('<span style="color:var(--red);">取得に失敗しました</span>', 'error');
+    });
+}
+
+function refreshSinglePrice(holdingId, symbol) {
+    const row = document.getElementById('hrow-' + holdingId);
+    if (row) row.style.opacity = '0.5';
+
+    fetch('/api/refresh_price/' + holdingId, { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            const sign = data.change_pct >= 0 ? '+' : '';
+            showPriceStatus('<b>' + symbol + '</b>: ' + data.new_price + ' (' + sign + data.change_pct.toFixed(2) + '%)', 'success');
+            setTimeout(function() { location.reload(); }, 1500);
+        } else {
+            if (row) row.style.opacity = '1';
+            showPriceStatus('<b>' + symbol + '</b>: ' + (data.error || '取得失敗'), 'error');
+        }
+    })
+    .catch(function() {
+        if (row) row.style.opacity = '1';
+        showPriceStatus('<b>' + symbol + '</b>: 通信エラー', 'error');
+    });
 }
 
 // Sort functionality
