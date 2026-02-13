@@ -15,9 +15,9 @@ if not exist "venv\Scripts\activate.bat" (
 
 call venv\Scripts\activate.bat
 
-echo アプリケーションを起動します...
-echo http://localhost:5000 でアクセスできます。
-echo 終了するには Ctrl+C を押してください。
+echo Starting application...
+echo URL: http://localhost:5000
+echo Press Ctrl+C to stop.
 echo.
 
 python app.py

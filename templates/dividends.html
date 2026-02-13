@@ -16,8 +16,8 @@
             <option value="{{ y }}" {% if current_year == y %}selected{% endif %}>{{ y }}年</option>
             {% endfor %}
         </select>
-        <button class="btn-apple btn-apple-secondary btn-apple-sm" onclick="document.getElementById('addDividendModal').style.display='flex'">
-            <i class="bi bi-plus-circle"></i> 追加
+        <button class="btn-apple btn-apple-primary btn-apple-sm" onclick="fetchAllDividendInfo()" id="btnBulkFetch">
+            <i class="bi bi-cloud-download"></i> 配当情報を一括取得
         </button>
         <a href="/export/dividends?year={{ current_year }}" class="btn-apple btn-apple-secondary btn-apple-sm">
             <i class="bi bi-download"></i> CSV
@@ -25,23 +25,23 @@
     </div>
 </div>
 
-<!-- ━━━ 年間配当サマリー ━━━ -->
+<!-- ━━━ 年間予想配当サマリー ━━━ -->
 <div class="card-apple" style="margin-bottom: 24px;">
     <div class="card-apple-body" style="text-align: center; padding: 28px 20px;">
         <div style="font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 8px;">
-            {{ current_year }}年 年間配当金額：総額（税引き前）
+            予想年間配当金（税引き前）
         </div>
         <div style="display: flex; align-items: baseline; justify-content: center; gap: 16px;">
-            <span style="font-size: 2.4rem; font-weight: 800; letter-spacing: -0.02em;">{{ total_amount | currency }}</span>
+            <span style="font-size: 2.4rem; font-weight: 800; letter-spacing: -0.02em;">{{ predicted_annual_total | currency }}</span>
             {% if dividend_yield > 0 %}
             <span style="font-size: 1.1rem; font-weight: 600; color: var(--green);">
-                (年利 {{ '%.2f' | format(dividend_yield) }}%)
+                (利回り {{ '%.2f' | format(dividend_yield) }}%)
             </span>
             {% endif %}
         </div>
         {% if total_portfolio_value > 0 %}
         <div style="font-size: 0.82rem; color: var(--text-secondary); margin-top: 6px;">
-            （総資産評価額 {{ total_portfolio_value | currency }}）
+            総資産評価額 {{ total_portfolio_value | currency }}
         </div>
         {% endif %}
     </div>
@@ -50,40 +50,38 @@
 <!-- ━━━ サマリーカード ━━━ -->
 <div class="grid-4" style="margin-bottom: 24px;">
     <div class="stat-card">
-        <div class="stat-label">税引き前合計</div>
-        <div class="stat-value" style="font-size: 1.1rem;">{{ total_amount | currency }}</div>
+        <div class="stat-label">予想年間配当</div>
+        <div class="stat-value" style="font-size: 1.1rem;">{{ predicted_annual_total | currency }}</div>
     </div>
     <div class="stat-card">
-        <div class="stat-label">源泉徴収税</div>
-        <div class="stat-value negative" style="font-size: 1.1rem;">{{ total_tax | currency }}</div>
+        <div class="stat-label">{{ current_year }}年 実績受取額</div>
+        <div class="stat-value positive" style="font-size: 1.1rem;">{{ actual_total | currency }}</div>
     </div>
     <div class="stat-card">
-        <div class="stat-label">手取額</div>
-        <div class="stat-value positive" style="font-size: 1.1rem;">{{ total_net | currency }}</div>
+        <div class="stat-label">予想配当利回り</div>
+        <div class="stat-value" style="font-size: 1.1rem;">{{ '%.2f' | format(dividend_yield) }}%</div>
     </div>
     <div class="stat-card">
-        <div class="stat-label">月平均</div>
+        <div class="stat-label">予想月平均</div>
         <div class="stat-value" style="font-size: 1.1rem;">{{ monthly_avg | currency }}</div>
     </div>
 </div>
 
 <!-- ━━━ 月別配当チャート + 配当ポートフォリオ ━━━ -->
 <div class="grid-2" style="margin-bottom: 24px;">
-    <!-- 月別棒グラフ -->
     <div class="card-apple">
-        <div class="card-apple-header"><i class="bi bi-bar-chart"></i> 月別配当金額（税引き前）</div>
+        <div class="card-apple-header"><i class="bi bi-bar-chart"></i> 月別予想配当金額</div>
         <div class="card-apple-body">
-            {% if total_amount > 0 %}
+            {% if predicted_annual_total > 0 %}
             <canvas id="monthlyChart" style="max-height: 280px;"></canvas>
             {% else %}
             <div style="text-align: center; padding: 30px; color: var(--text-secondary); font-size: 0.88rem;">
-                配当データがありません
+                配当情報を取得すると、月別配当チャートが表示されます。<br>
+                上の「配当情報を一括取得」ボタンを押してください。
             </div>
             {% endif %}
         </div>
     </div>
-
-    <!-- 銘柄別ドーナツチャート -->
     <div class="card-apple">
         <div class="card-apple-header"><i class="bi bi-pie-chart"></i> 配当ポートフォリオ</div>
         <div class="card-apple-body">
@@ -98,10 +96,93 @@
     </div>
 </div>
 
+<!-- ━━━ 保有銘柄配当一覧 ━━━ -->
+<div class="card-apple" style="margin-bottom: 24px;">
+    <div class="card-apple-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <span><i class="bi bi-list-columns-reverse"></i> 保有銘柄 配当情報</span>
+        <span style="font-weight: 400; color: var(--text-secondary); font-size: 0.82rem;">{{ holdings_dividend | length }}銘柄</span>
+    </div>
+    <div class="card-apple-body" style="padding: 0; overflow-x: auto;">
+        {% if holdings_dividend %}
+        <table class="table-apple">
+            <thead>
+                <tr>
+                    <th>コード</th>
+                    <th>銘柄名</th>
+                    <th style="text-align: right;">保有数</th>
+                    <th style="text-align: right;">評価額(JPY)</th>
+                    <th style="text-align: right;">予想配当(1株)</th>
+                    <th style="text-align: right;">予想配当(年間)</th>
+                    <th style="text-align: right;">配当利回り</th>
+                    <th>配当支払月</th>
+                    <th>頻度</th>
+                    <th style="width: 60px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for hd in holdings_dividend %}
+                <tr id="row-{{ hd.holding.id }}">
+                    <td style="font-family: monospace; font-size: 0.82rem;">{{ hd.holding.symbol }}</td>
+                    <td>
+                        <a href="/holding/{{ hd.holding.id }}" style="text-decoration: none; color: var(--accent);">{{ hd.holding.name }}</a>
+                    </td>
+                    <td style="text-align: right;">{{ '%.2f' | format(hd.holding.quantity) }}</td>
+                    <td style="text-align: right;">{{ hd.jpy_value | currency }}</td>
+                    <td style="text-align: right;">
+                        {% if hd.has_schedule and hd.annual_dividend_per_share > 0 %}
+                        {{ '%.2f' | format(hd.annual_dividend_per_share) }}
+                        {% else %}
+                        <span style="color: var(--text-secondary);">-</span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align: right; font-weight: 600;">
+                        {% if hd.annual_dividend_total > 0 %}
+                        {{ hd.annual_dividend_total | currency }}
+                        {% else %}
+                        <span style="color: var(--text-secondary);">-</span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align: right;">
+                        {% if hd.dividend_yield > 0 %}
+                        <span style="color: var(--green); font-weight: 600;">{{ '%.2f' | format(hd.dividend_yield) }}%</span>
+                        {% else %}
+                        <span style="color: var(--text-secondary);">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if hd.payment_months %}
+                        <div style="display: flex; gap: 3px; flex-wrap: wrap;">
+                            {% for m in range(1, 13) %}
+                            <span style="display: inline-block; width: 22px; height: 20px; line-height: 20px; text-align: center; font-size: 0.68rem; border-radius: 4px; {{ 'background: var(--accent); color: white; font-weight: 700;' if m in hd.payment_months else 'background: var(--bg-secondary); color: var(--text-secondary);' }}">{{ m }}</span>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <span style="color: var(--text-secondary); font-size: 0.82rem;">未取得</span>
+                        {% endif %}
+                    </td>
+                    <td style="font-size: 0.82rem;">{{ hd.frequency or '-' }}</td>
+                    <td>
+                        <button class="btn-apple btn-apple-secondary btn-apple-sm" style="padding:2px 8px;font-size:0.72rem;"
+                                onclick="fetchSingleDividend({{ hd.holding.id }}, '{{ hd.holding.symbol }}')" title="配当情報を取得">
+                            <i class="bi bi-cloud-download"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div style="text-align: center; padding: 30px; color: var(--text-secondary); font-size: 0.88rem;">
+            保有資産がありません。<a href="/assets" style="color: var(--accent);">資産一覧</a>から資産を登録してください。
+        </div>
+        {% endif %}
+    </div>
+</div>
+
 <!-- ━━━ 月別内訳 ━━━ -->
 <div class="card-apple" style="margin-bottom: 24px;">
     <div class="card-apple-header">
-        <i class="bi bi-calendar3"></i> 月別内訳
+        <i class="bi bi-calendar3"></i> 月別予想配当内訳
     </div>
     <div class="card-apple-body" style="padding: 12px 16px;">
         <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;">
@@ -111,7 +192,7 @@
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                     <span style="font-size: 0.88rem; font-weight: 700;">{{ m }}月</span>
                     <span style="font-size: 0.88rem; font-weight: 700; color: {{ 'var(--accent)' if md.amount > 0 else 'var(--text-secondary)' }};">
-                        {{ md.amount | currency if md.amount > 0 else '¥0' }}
+                        {{ (md.amount | round(0)) | currency if md.amount > 0 else '¥0' }}
                     </span>
                 </div>
                 {% if md.entries %}
@@ -128,28 +209,14 @@
     </div>
 </div>
 
-<!-- ━━━ 予想配当カレンダー ━━━ -->
+<!-- ━━━ 実績配当金 ━━━ -->
+{% if actual_dividends %}
 <div class="card-apple" style="margin-bottom: 24px;">
-    <div class="card-apple-header" style="display: flex; justify-content: space-between; align-items: center;">
-        <span><i class="bi bi-calendar-event"></i> 予想配当カレンダー（保有銘柄）</span>
-        <button class="btn-apple btn-apple-secondary btn-apple-sm" onclick="loadDividendCalendar()">
-            <i class="bi bi-arrow-clockwise"></i> 更新
-        </button>
-    </div>
-    <div class="card-apple-body" id="calendarArea">
-        <div style="text-align: center; padding: 16px; color: var(--text-secondary); font-size: 0.88rem;">
-            「更新」ボタンを押すと、保有銘柄の配当スケジュールから予想配当を計算します。<br>
-            <span style="font-size: 0.78rem;">※ 銘柄詳細ページで配当情報を取得すると、スケジュールが保存されます。</span>
-        </div>
-    </div>
-</div>
-
-<!-- ━━━ 配当金一覧テーブル ━━━ -->
-{% if dividends %}
-<div class="card-apple">
     <div class="card-apple-header">
-        <i class="bi bi-list-ul"></i> {{ current_year }}年 配当金一覧
-        <span style="float: right; font-weight: 400; color: var(--text-secondary); font-size: 0.82rem;">{{ dividends | length }}件</span>
+        <i class="bi bi-list-ul"></i> {{ current_year }}年 実績配当金
+        <span style="float: right; font-weight: 400; color: var(--text-secondary); font-size: 0.82rem;">
+            {{ actual_dividends | length }}件 / 合計 {{ actual_total | currency }}（税 {{ actual_tax | currency }}）
+        </span>
     </div>
     <div class="card-apple-body" style="padding: 0; overflow-x: auto;">
         <table class="table-apple">
@@ -167,7 +234,7 @@
                 </tr>
             </thead>
             <tbody>
-                {% for d in dividends %}
+                {% for d in actual_dividends %}
                 <tr>
                     <td>{{ d.payment_date.strftime('%m/%d') }}</td>
                     <td>{{ d.account.member.name }}</td>
@@ -188,77 +255,17 @@
         </table>
     </div>
 </div>
-{% else %}
-<div class="alert-apple alert-info">
-    {{ current_year }}年の配当金データがありません。「追加」ボタンから登録してください。
-</div>
 {% endif %}
 
-<!-- 追加モーダル -->
-<div id="addDividendModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:1000; justify-content:center; align-items:center;">
-    <div class="card-apple" style="width: 480px;">
-        <div class="card-apple-header" style="display:flex; justify-content:space-between;">
-            <span>配当金を追加</span>
-            <button onclick="this.closest('#addDividendModal').style.display='none'" style="background:none;border:none;font-size:1.2rem;cursor:pointer;">&times;</button>
-        </div>
-        <div class="card-apple-body">
-            <form method="POST" action="/dividend/add">
-                <div style="margin-bottom: 12px;">
-                    <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">口座</label>
-                    <select class="form-select" name="account_id" required>
-                        {% for a in accounts %}
-                        <option value="{{ a.id }}">{{ a.member.name }} - {{ a.account_name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="grid-2" style="margin-bottom: 12px;">
-                    <div>
-                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">銘柄名</label>
-                        <input type="text" class="form-control" name="name" required>
-                    </div>
-                    <div>
-                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">銘柄コード</label>
-                        <input type="text" class="form-control" name="symbol">
-                    </div>
-                </div>
-                <div class="grid-3" style="margin-bottom: 12px;">
-                    <div>
-                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">配当金額</label>
-                        <input type="number" class="form-control" name="amount" step="0.01" required>
-                    </div>
-                    <div>
-                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">税額</label>
-                        <input type="number" class="form-control" name="tax_amount" step="0.01" value="0">
-                    </div>
-                    <div>
-                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">通貨</label>
-                        <select class="form-select" name="currency">
-                            <option>JPY</option><option>USD</option><option>HKD</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="grid-2" style="margin-bottom: 16px;">
-                    <div>
-                        <label style="display:block;font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">支払日</label>
-                        <input type="date" class="form-control" name="payment_date" required>
-                    </div>
-                    <div style="display:flex;align-items:end;padding-bottom:4px;">
-                        <label style="display:flex;align-items:center;gap:6px;font-size:0.88rem;">
-                            <input type="checkbox" name="is_nisa" value="1"> NISA（非課税）
-                        </label>
-                    </div>
-                </div>
-                <button type="submit" class="btn-apple btn-apple-primary" style="width:100%;">追加</button>
-            </form>
-        </div>
-    </div>
-</div>
+<!-- ステータス表示 -->
+<div id="fetchStatus" style="display:none; position:fixed; bottom: 24px; right: 24px; z-index: 1000; max-width: 400px;"></div>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    {% if total_amount > 0 %}
+    {% if predicted_annual_total > 0 %}
     // 月別配当棒グラフ
     const monthlyAmounts = [
         {% for m in range(1, 13) %}{{ monthly_data[m].amount | round(0) }}{{ ',' if not loop.last }}{% endfor %}
@@ -270,7 +277,7 @@ document.addEventListener('DOMContentLoaded', function() {
         data: {
             labels: monthLabels,
             datasets: [{
-                label: '配当金（税引き前）',
+                label: '予想配当金',
                 data: monthlyAmounts,
                 backgroundColor: monthlyAmounts.map(v => v > 0 ? '#007aff' : 'rgba(0,0,0,0.04)'),
                 borderRadius: 6,
@@ -313,57 +320,77 @@ document.addEventListener('DOMContentLoaded', function() {
     {% endif %}
 
     {% if by_stock %}
-    // 配当ポートフォリオ（ドーナツチャート）
     const stockLabels = [{% for s in by_stock %}'{{ s.symbol or s.name }}'{{ ',' if not loop.last }}{% endfor %}];
     const stockValues = [{% for s in by_stock %}{{ s.amount | round(0) }}{{ ',' if not loop.last }}{% endfor %}];
-
-    createPieChart('dividendPieChart', stockLabels, stockValues, '配当金額');
+    createPieChart('dividendPieChart', stockLabels, stockValues, '予想配当金額');
     {% endif %}
 });
 
-function loadDividendCalendar() {
-    const area = document.getElementById('calendarArea');
-    area.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);"><i class="bi bi-hourglass-split"></i> 計算中...</div>';
+function showStatus(html, type) {
+    const el = document.getElementById('fetchStatus');
+    el.style.display = 'block';
+    el.innerHTML = '<div class="card-apple" style="box-shadow: 0 8px 32px rgba(0,0,0,0.18); border-left: 4px solid ' +
+        (type === 'success' ? 'var(--green)' : type === 'error' ? 'var(--red)' : 'var(--accent)') + ';">' +
+        '<div class="card-apple-body" style="padding: 14px 18px; font-size: 0.88rem;">' + html + '</div></div>';
+    if (type !== 'loading') {
+        setTimeout(function() { el.style.display = 'none'; }, 5000);
+    }
+}
+
+function fetchAllDividendInfo() {
+    const btn = document.getElementById('btnBulkFetch');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 取得中...';
+    showStatus('<i class="bi bi-hourglass-split"></i> 配当情報を取得中です。しばらくお待ちください...', 'loading');
 
     const familyId = '{{ selected_family_id or "" }}';
-    const url = '/api/dividend_calendar' + (familyId ? '?family_id=' + familyId : '');
-
-    fetch(url)
+    fetch('/api/dividend_info_bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ family_id: familyId || null }),
+    })
     .then(r => r.json())
     .then(data => {
-        if (data.total_annual === 0) {
-            area.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);font-size:0.88rem;">' +
-                '配当スケジュールが登録されていません。銘柄詳細ページで「配当情報」を取得してください。</div>';
-            return;
-        }
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-cloud-download"></i> 配当情報を一括取得';
 
-        let html = '<div style="margin-bottom: 16px; text-align: center;">' +
-            '<span style="font-size: 1.2rem; font-weight: 700;">予想年間配当: ' + formatYenShort(data.total_annual) + '</span>' +
-            '<span style="font-size: 0.88rem; color: var(--text-secondary); margin-left: 12px;">(月平均: ' + formatYenShort(Math.round(data.total_annual / 12)) + ')</span>' +
-            '</div>';
+        let html = '<b>' + data.updated + '件取得成功</b>';
+        if (data.failed > 0) html += '、<span style="color:var(--red);">' + data.failed + '件失敗</span>';
+        html += '<br><span style="font-size:0.78rem;color:var(--text-secondary);">ページを再読み込みして反映します。</span>';
+        showStatus(html, data.failed > 0 ? 'error' : 'success');
 
-        html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">';
-        for (let m = 1; m <= 12; m++) {
-            const total = data.monthly_totals[m] || 0;
-            const items = data.monthly[m] || [];
-            const active = total > 0;
-            html += '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;' + (active ? 'background:rgba(52,199,89,0.05);border-color:var(--green);' : '') + '">';
-            html += '<div style="display:flex;justify-content:space-between;margin-bottom:4px;">';
-            html += '<span style="font-weight:700;font-size:0.88rem;">' + m + '月</span>';
-            html += '<span style="font-weight:700;color:' + (active ? 'var(--green)' : 'var(--text-secondary)') + ';font-size:0.88rem;">' + formatYenShort(total) + '</span>';
-            html += '</div>';
-            items.forEach(function(item) {
-                html += '<div style="font-size:0.72rem;color:var(--text-secondary);display:flex;justify-content:space-between;padding:1px 0;border-top:1px solid var(--border);">';
-                html += '<span>' + item.symbol + '</span><span>' + formatYenShort(item.amount) + '</span></div>';
-            });
-            html += '</div>';
-        }
-        html += '</div>';
-
-        area.innerHTML = html;
+        // 2秒後にリロード
+        setTimeout(function() { location.reload(); }, 2000);
     })
     .catch(() => {
-        area.innerHTML = '<div style="text-align:center;padding:20px;color:var(--red);">取得に失敗しました</div>';
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-cloud-download"></i> 配当情報を一括取得';
+        showStatus('<span style="color:var(--red);">取得に失敗しました。ネットワーク接続を確認してください。</span>', 'error');
+    });
+}
+
+function fetchSingleDividend(holdingId, symbol) {
+    const row = document.getElementById('row-' + holdingId);
+    if (row) row.style.opacity = '0.5';
+
+    fetch('/api/dividend_info/' + holdingId)
+    .then(r => r.json())
+    .then(data => {
+        if (data.source === 'none') {
+            showStatus('<b>' + symbol + '</b>: 配当情報が見つかりませんでした', 'error');
+            if (row) row.style.opacity = '1';
+        } else {
+            let html = '<b>' + symbol + '</b>: ';
+            if (data.dividend_yield) html += '利回り ' + data.dividend_yield + '% ';
+            if (data.annual_dividend) html += '年間配当 ' + data.annual_dividend;
+            if (data.payment_months && data.payment_months.length) html += ' (' + data.payment_months.join(',') + '月)';
+            showStatus(html, 'success');
+            setTimeout(function() { location.reload(); }, 1500);
+        }
+    })
+    .catch(() => {
+        if (row) row.style.opacity = '1';
+        showStatus('<b>' + symbol + '</b>: 取得に失敗しました', 'error');
     });
 }
 </script>

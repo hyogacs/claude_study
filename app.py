@@ -628,101 +628,169 @@ def dividends():
     family_id = request.args.get('family_id', type=int)
     year = request.args.get('year', type=int, default=date.today().year)
 
-    query = Dividend.query.join(Account).join(FamilyMember)
-    if family_id:
-        query = query.filter(FamilyMember.family_id == family_id)
-
-    all_dividends = query.order_by(Dividend.payment_date.desc()).all()
-    year_dividends = [d for d in all_dividends
-                      if d.payment_date and d.payment_date.year == year]
-
-    rates, _ = get_exchange_rates()
-    total_amount = sum(convert_to_jpy(d.amount, d.currency, rates) for d in year_dividends)
-    total_tax = sum(convert_to_jpy(d.tax_amount, d.currency, rates) for d in year_dividends)
-    total_net = total_amount - total_tax
-
-    # 総資産評価額（配当利回り計算用）
-    total_portfolio_value = 0
+    # 保有銘柄を取得
     if family_id:
         fam = Family.query.get(family_id)
-        if fam:
-            holdings = _get_family_holdings(fam)
-            total_portfolio_value = sum(convert_to_jpy(h.market_value, h.currency, rates) for h in holdings)
+        all_holdings = _get_family_holdings(fam) if fam else []
     else:
-        for fam in Family.query.all():
-            holdings = _get_family_holdings(fam)
-            total_portfolio_value += sum(convert_to_jpy(h.market_value, h.currency, rates) for h in holdings)
+        all_holdings = Holding.query.all()
 
-    dividend_yield = (total_amount / total_portfolio_value * 100) if total_portfolio_value > 0 else 0
-    monthly_avg = total_amount / 12 if total_amount > 0 else 0
+    rates, _ = get_exchange_rates()
+    schedules = {s.symbol: s for s in DividendSchedule.query.all()}
 
-    # 月別配当データ
-    monthly_data = {m: {'amount': 0, 'tax': 0, 'entries': []} for m in range(1, 13)}
-    for d in year_dividends:
-        m = d.payment_date.month
-        jpy_amount = convert_to_jpy(d.amount, d.currency, rates)
-        monthly_data[m]['amount'] += jpy_amount
-        monthly_data[m]['tax'] += convert_to_jpy(d.tax_amount, d.currency, rates)
-        monthly_data[m]['entries'].append({
-            'symbol': d.symbol, 'name': d.name,
-            'amount': jpy_amount,
+    # 保有銘柄 × 配当スケジュール → 予想配当を計算
+    holdings_dividend = []
+    predicted_annual_total = 0
+    predicted_monthly = {m: {'amount': 0, 'entries': []} for m in range(1, 13)}
+    by_stock_predicted = {}
+
+    for h in all_holdings:
+        sched = schedules.get(h.symbol)
+        annual_div_jpy = 0
+        div_yield = 0
+        payment_months = []
+        frequency = ''
+        annual_per_share = 0
+
+        if sched:
+            annual_per_share = sched.annual_dividend or 0
+            annual_div_total = annual_per_share * h.quantity
+            annual_div_jpy = convert_to_jpy(annual_div_total, sched.currency or h.currency, rates)
+            div_yield = sched.dividend_yield or 0
+            payment_months = sched.get_months_list()
+            frequency = sched.frequency or ''
+
+            if payment_months and annual_div_jpy > 0:
+                per_payment = annual_div_jpy / len(payment_months)
+                for m in payment_months:
+                    predicted_monthly[m]['amount'] += per_payment
+                    predicted_monthly[m]['entries'].append({
+                        'symbol': h.symbol, 'name': h.name,
+                        'amount': round(per_payment),
+                    })
+
+            predicted_annual_total += annual_div_jpy
+
+            key = h.symbol or h.name
+            if key not in by_stock_predicted:
+                by_stock_predicted[key] = {'name': h.name, 'symbol': h.symbol, 'amount': 0}
+            by_stock_predicted[key]['amount'] += annual_div_jpy
+
+        holdings_dividend.append({
+            'holding': h,
+            'annual_dividend_per_share': annual_per_share,
+            'annual_dividend_total': round(annual_div_jpy),
+            'dividend_yield': div_yield,
+            'payment_months': payment_months,
+            'frequency': frequency,
+            'has_schedule': sched is not None,
+            'jpy_value': convert_to_jpy(h.market_value, h.currency, rates),
         })
 
-    # 銘柄別配当集計（ドーナツチャート用）
-    by_stock = {}
-    for d in year_dividends:
-        key = d.symbol or d.name
-        jpy_amount = convert_to_jpy(d.amount, d.currency, rates)
-        if key not in by_stock:
-            by_stock[key] = {'name': d.name, 'symbol': d.symbol, 'amount': 0}
-        by_stock[key]['amount'] += jpy_amount
-    by_stock_sorted = sorted(by_stock.values(), key=lambda x: x['amount'], reverse=True)
+    by_stock_sorted = sorted(by_stock_predicted.values(), key=lambda x: x['amount'], reverse=True)
 
-    # 予想配当データ（保有銘柄のスケジュールから計算）
-    schedules = DividendSchedule.query.all()
-    schedule_map = {s.symbol: s for s in schedules}
+    total_portfolio_value = sum(hd['jpy_value'] for hd in holdings_dividend)
+    dividend_yield = (predicted_annual_total / total_portfolio_value * 100) if total_portfolio_value > 0 else 0
+    monthly_avg = predicted_annual_total / 12 if predicted_annual_total > 0 else 0
+
+    # 実績配当金（CSV等から読み込んだ実績データ）
+    div_query = Dividend.query.join(Account).join(FamilyMember)
+    if family_id:
+        div_query = div_query.filter(FamilyMember.family_id == family_id)
+    all_dividends = div_query.order_by(Dividend.payment_date.desc()).all()
+    year_dividends = [d for d in all_dividends
+                      if d.payment_date and d.payment_date.year == year]
+    actual_total = sum(convert_to_jpy(d.amount, d.currency, rates) for d in year_dividends)
+    actual_tax = sum(convert_to_jpy(d.tax_amount, d.currency, rates) for d in year_dividends)
 
     # 年度リスト
-    years_set = set()
+    years_set = {date.today().year}
     for d in all_dividends:
         if d.payment_date:
             years_set.add(d.payment_date.year)
-    years_set.add(date.today().year)
     available_years = sorted(years_set, reverse=True)
 
     families = Family.query.all()
-    accounts = Account.query.all()
 
-    return render_template('dividends.html', dividends=year_dividends,
-                           families=families, accounts=accounts,
+    return render_template('dividends.html',
+                           families=families,
                            selected_family_id=family_id, current_year=year,
                            available_years=available_years,
-                           total_amount=total_amount, total_tax=total_tax,
-                           total_net=total_net, rates=rates,
-                           total_portfolio_value=total_portfolio_value,
+                           holdings_dividend=holdings_dividend,
+                           predicted_annual_total=round(predicted_annual_total),
                            dividend_yield=dividend_yield,
-                           monthly_avg=monthly_avg,
-                           monthly_data=monthly_data,
+                           monthly_avg=round(monthly_avg),
+                           monthly_data=predicted_monthly,
                            by_stock=by_stock_sorted,
-                           schedule_map=schedule_map)
+                           total_portfolio_value=round(total_portfolio_value),
+                           actual_dividends=year_dividends,
+                           actual_total=round(actual_total),
+                           actual_tax=round(actual_tax),
+                           rates=rates)
 
 
-@app.route('/dividend/add', methods=['POST'])
-def dividend_add():
-    d = Dividend(
-        account_id=int(request.form['account_id']),
-        symbol=request.form.get('symbol', '').strip(),
-        name=request.form.get('name', '').strip(),
-        amount=float(request.form.get('amount', 0)),
-        tax_amount=float(request.form.get('tax_amount', 0)),
-        currency=request.form.get('currency', 'JPY').strip(),
-        payment_date=datetime.strptime(request.form['payment_date'], '%Y-%m-%d').date(),
-        is_nisa=bool(request.form.get('is_nisa')),
-    )
-    db.session.add(d)
-    db.session.commit()
-    flash(f'配当金「{d.name}」を追加しました', 'success')
-    return redirect(url_for('dividends'))
+@app.route('/api/dividend_info_bulk', methods=['POST'])
+def api_dividend_info_bulk():
+    """全保有銘柄の配当情報を一括取得する"""
+    data = request.get_json() or {}
+    family_id = data.get('family_id')
+
+    if family_id:
+        family = Family.query.get(family_id)
+        holdings = _get_family_holdings(family) if family else []
+    else:
+        holdings = Holding.query.all()
+
+    updated = 0
+    failed = 0
+    results = []
+
+    for h in holdings:
+        if not h.symbol:
+            continue
+
+        info = fetch_dividend_info(h.symbol, h.currency)
+        if info:
+            _save_dividend_schedule(h.symbol, h.name, info, h.currency)
+            updated += 1
+            results.append({
+                'symbol': h.symbol,
+                'name': h.name,
+                'dividend_yield': info['dividend_yield'],
+                'annual_dividend': info['annual_dividend'],
+                'payment_months': info['payment_months'],
+                'frequency': info['frequency'],
+                'status': 'ok',
+            })
+        else:
+            schedule = get_dividend_schedule(h.symbol)
+            if schedule:
+                _save_dividend_schedule(h.symbol, h.name, {
+                    'dividend_yield': 0, 'annual_dividend': 0,
+                    'payment_months': schedule['months'],
+                    'frequency': schedule['frequency'],
+                }, h.currency)
+                updated += 1
+                results.append({
+                    'symbol': h.symbol,
+                    'name': h.name,
+                    'payment_months': schedule['months'],
+                    'frequency': schedule['frequency'],
+                    'status': 'fallback',
+                })
+            else:
+                failed += 1
+                results.append({
+                    'symbol': h.symbol,
+                    'name': h.name,
+                    'status': 'failed',
+                })
+
+    return jsonify({
+        'updated': updated,
+        'failed': failed,
+        'results': results,
+    })
 
 
 @app.route('/api/dividend_schedule/save', methods=['POST'])
