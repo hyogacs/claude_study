@@ -765,15 +765,24 @@ def api_dividend_info_bulk():
         else:
             schedule = get_dividend_schedule(h.symbol)
             if schedule:
+                annual_div = schedule.get('annual_dividend', 0)
+                sched_currency = schedule.get('currency', h.currency)
+                # 配当利回りを計算（株価があれば）
+                sched_yield = 0
+                if annual_div > 0 and h.current_price > 0:
+                    sched_yield = round(annual_div / h.current_price * 100, 2)
                 _save_dividend_schedule(h.symbol, h.name, {
-                    'dividend_yield': 0, 'annual_dividend': 0,
+                    'dividend_yield': sched_yield,
+                    'annual_dividend': annual_div,
                     'payment_months': schedule['months'],
                     'frequency': schedule['frequency'],
-                }, h.currency)
+                }, sched_currency)
                 updated += 1
                 results.append({
                     'symbol': h.symbol,
                     'name': h.name,
+                    'dividend_yield': sched_yield,
+                    'annual_dividend': annual_div,
                     'payment_months': schedule['months'],
                     'frequency': schedule['frequency'],
                     'status': 'fallback',
@@ -1227,19 +1236,25 @@ def api_dividend_info(holding_id):
     # フォールバック: 既知のスケジュール
     schedule = get_dividend_schedule(h.symbol)
     if schedule:
+        annual_div = schedule.get('annual_dividend', 0)
+        sched_currency = schedule.get('currency', h.currency)
+        sched_yield = 0
+        if annual_div > 0 and h.current_price > 0:
+            sched_yield = round(annual_div / h.current_price * 100, 2)
         _save_dividend_schedule(h.symbol, h.name, {
-            'dividend_yield': 0, 'annual_dividend': 0,
+            'dividend_yield': sched_yield,
+            'annual_dividend': annual_div,
             'payment_months': schedule['months'],
             'frequency': schedule['frequency'],
-        }, h.currency)
+        }, sched_currency)
         return jsonify({
             'source': 'known',
-            'dividend_yield': None,
-            'annual_dividend': None,
+            'dividend_yield': sched_yield,
+            'annual_dividend': annual_div,
             'ex_dividend_date': None,
             'payment_months': schedule['months'],
             'frequency': schedule['frequency'],
-            'currency': h.currency,
+            'currency': sched_currency,
         })
 
     return jsonify({
