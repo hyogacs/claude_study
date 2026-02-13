@@ -159,6 +159,27 @@ class Dividend(db.Model):
         return self.amount - self.tax_amount
 
 
+class DividendSchedule(db.Model):
+    """銘柄別の配当スケジュール（キャッシュ）"""
+    id = db.Column(db.Integer, primary_key=True)
+    symbol = db.Column(db.String(20), nullable=False, unique=True)
+    name = db.Column(db.String(200))
+    annual_dividend = db.Column(db.Float, default=0)
+    dividend_yield = db.Column(db.Float, default=0)
+    payment_months = db.Column(db.String(50))  # "3,6,9,12" 形式
+    frequency = db.Column(db.String(20))  # 毎月, 四半期, 半期, 年1回
+    currency = db.Column(db.String(10), default='JPY')
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def get_months_list(self):
+        if not self.payment_months:
+            return []
+        return [int(m) for m in self.payment_months.split(',') if m.strip()]
+
+    def set_months_list(self, months):
+        self.payment_months = ','.join(str(m) for m in sorted(months))
+
+
 class RealizedGain(db.Model):
     """実現損益記録"""
     id = db.Column(db.Integer, primary_key=True)

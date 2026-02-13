@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}配当金 - 投資管理システム{% endblock %}
+{% block title %}配当金管理 - 投資管理システム{% endblock %}
 
 {% block content %}
 <div class="page-header">
-    <h1 class="page-title">配当金</h1>
+    <h1 class="page-title">配当金管理</h1>
     <div style="display: flex; gap: 10px; align-items: center;">
         <select class="family-select" onchange="location.href='/dividends?year={{ current_year }}&family_id='+this.value">
             <option value="">全家族</option>
@@ -11,45 +11,153 @@
             <option value="{{ f.id }}" {% if selected_family_id == f.id %}selected{% endif %}>{{ f.name }}</option>
             {% endfor %}
         </select>
-        <select class="family-select" onchange="location.href='/dividends?year='+this.value">
+        <select class="family-select" onchange="location.href='/dividends?year='+this.value+'{% if selected_family_id %}&family_id={{ selected_family_id }}{% endif %}'">
             {% for y in available_years %}
             <option value="{{ y }}" {% if current_year == y %}selected{% endif %}>{{ y }}年</option>
             {% endfor %}
         </select>
         <button class="btn-apple btn-apple-secondary btn-apple-sm" onclick="document.getElementById('addDividendModal').style.display='flex'">
-            <i class="bi bi-plus-circle"></i> 配当金追加
+            <i class="bi bi-plus-circle"></i> 追加
         </button>
         <a href="/export/dividends?year={{ current_year }}" class="btn-apple btn-apple-secondary btn-apple-sm">
-            <i class="bi bi-download"></i> CSV出力
+            <i class="bi bi-download"></i> CSV
         </a>
     </div>
 </div>
 
-<!-- 年間サマリー -->
-<div class="grid-3" style="margin-bottom: 24px;">
-    <div class="stat-card">
-        <div class="stat-label">{{ current_year }}年 配当金合計</div>
-        <div class="stat-value" style="font-size: 1.2rem;">{{ total_amount | currency }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-label">源泉徴収税</div>
-        <div class="stat-value negative" style="font-size: 1.2rem;">{{ total_tax | currency }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-label">手取額</div>
-        <div class="stat-value positive" style="font-size: 1.2rem;">{{ total_net | currency }}</div>
+<!-- ━━━ 年間配当サマリー ━━━ -->
+<div class="card-apple" style="margin-bottom: 24px;">
+    <div class="card-apple-body" style="text-align: center; padding: 28px 20px;">
+        <div style="font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 8px;">
+            {{ current_year }}年 年間配当金額：総額（税引き前）
+        </div>
+        <div style="display: flex; align-items: baseline; justify-content: center; gap: 16px;">
+            <span style="font-size: 2.4rem; font-weight: 800; letter-spacing: -0.02em;">{{ total_amount | currency }}</span>
+            {% if dividend_yield > 0 %}
+            <span style="font-size: 1.1rem; font-weight: 600; color: var(--green);">
+                (年利 {{ '%.2f' | format(dividend_yield) }}%)
+            </span>
+            {% endif %}
+        </div>
+        {% if total_portfolio_value > 0 %}
+        <div style="font-size: 0.82rem; color: var(--text-secondary); margin-top: 6px;">
+            （総資産評価額 {{ total_portfolio_value | currency }}）
+        </div>
+        {% endif %}
     </div>
 </div>
 
+<!-- ━━━ サマリーカード ━━━ -->
+<div class="grid-4" style="margin-bottom: 24px;">
+    <div class="stat-card">
+        <div class="stat-label">税引き前合計</div>
+        <div class="stat-value" style="font-size: 1.1rem;">{{ total_amount | currency }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">源泉徴収税</div>
+        <div class="stat-value negative" style="font-size: 1.1rem;">{{ total_tax | currency }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">手取額</div>
+        <div class="stat-value positive" style="font-size: 1.1rem;">{{ total_net | currency }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">月平均</div>
+        <div class="stat-value" style="font-size: 1.1rem;">{{ monthly_avg | currency }}</div>
+    </div>
+</div>
+
+<!-- ━━━ 月別配当チャート + 配当ポートフォリオ ━━━ -->
+<div class="grid-2" style="margin-bottom: 24px;">
+    <!-- 月別棒グラフ -->
+    <div class="card-apple">
+        <div class="card-apple-header"><i class="bi bi-bar-chart"></i> 月別配当金額（税引き前）</div>
+        <div class="card-apple-body">
+            {% if total_amount > 0 %}
+            <canvas id="monthlyChart" style="max-height: 280px;"></canvas>
+            {% else %}
+            <div style="text-align: center; padding: 30px; color: var(--text-secondary); font-size: 0.88rem;">
+                配当データがありません
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- 銘柄別ドーナツチャート -->
+    <div class="card-apple">
+        <div class="card-apple-header"><i class="bi bi-pie-chart"></i> 配当ポートフォリオ</div>
+        <div class="card-apple-body">
+            {% if by_stock %}
+            <canvas id="dividendPieChart" style="max-height: 280px;"></canvas>
+            {% else %}
+            <div style="text-align: center; padding: 30px; color: var(--text-secondary); font-size: 0.88rem;">
+                配当データがありません
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- ━━━ 月別内訳 ━━━ -->
+<div class="card-apple" style="margin-bottom: 24px;">
+    <div class="card-apple-header">
+        <i class="bi bi-calendar3"></i> 月別内訳
+    </div>
+    <div class="card-apple-body" style="padding: 12px 16px;">
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;">
+            {% for m in range(1, 13) %}
+            {% set md = monthly_data[m] %}
+            <div style="border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; {{ 'background: rgba(0,122,255,0.04);' if md.amount > 0 else '' }}">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <span style="font-size: 0.88rem; font-weight: 700;">{{ m }}月</span>
+                    <span style="font-size: 0.88rem; font-weight: 700; color: {{ 'var(--accent)' if md.amount > 0 else 'var(--text-secondary)' }};">
+                        {{ md.amount | currency if md.amount > 0 else '¥0' }}
+                    </span>
+                </div>
+                {% if md.entries %}
+                {% for item in md.entries %}
+                <div style="font-size: 0.72rem; color: var(--text-secondary); display: flex; justify-content: space-between; padding: 2px 0; border-top: 1px solid var(--border);">
+                    <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 55%;">{{ item.symbol or '' }} {{ item.name }}</span>
+                    <span>{{ item.amount | currency }}</span>
+                </div>
+                {% endfor %}
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- ━━━ 予想配当カレンダー ━━━ -->
+<div class="card-apple" style="margin-bottom: 24px;">
+    <div class="card-apple-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <span><i class="bi bi-calendar-event"></i> 予想配当カレンダー（保有銘柄）</span>
+        <button class="btn-apple btn-apple-secondary btn-apple-sm" onclick="loadDividendCalendar()">
+            <i class="bi bi-arrow-clockwise"></i> 更新
+        </button>
+    </div>
+    <div class="card-apple-body" id="calendarArea">
+        <div style="text-align: center; padding: 16px; color: var(--text-secondary); font-size: 0.88rem;">
+            「更新」ボタンを押すと、保有銘柄の配当スケジュールから予想配当を計算します。<br>
+            <span style="font-size: 0.78rem;">※ 銘柄詳細ページで配当情報を取得すると、スケジュールが保存されます。</span>
+        </div>
+    </div>
+</div>
+
+<!-- ━━━ 配当金一覧テーブル ━━━ -->
 {% if dividends %}
 <div class="card-apple">
+    <div class="card-apple-header">
+        <i class="bi bi-list-ul"></i> {{ current_year }}年 配当金一覧
+        <span style="float: right; font-weight: 400; color: var(--text-secondary); font-size: 0.82rem;">{{ dividends | length }}件</span>
+    </div>
     <div class="card-apple-body" style="padding: 0; overflow-x: auto;">
         <table class="table-apple">
             <thead>
                 <tr>
                     <th>支払日</th>
                     <th>メンバー</th>
-                    <th>証券会社</th>
+                    <th>コード</th>
                     <th>銘柄名</th>
                     <th style="text-align: right;">配当金額</th>
                     <th style="text-align: right;">税額</th>
@@ -61,9 +169,9 @@
             <tbody>
                 {% for d in dividends %}
                 <tr>
-                    <td>{{ d.payment_date.strftime('%Y-%m-%d') }}</td>
+                    <td>{{ d.payment_date.strftime('%m/%d') }}</td>
                     <td>{{ d.account.member.name }}</td>
-                    <td><span class="badge-apple badge-{{ 'sbi' if d.account.broker == 'SBI' else 'moomoo' }}">{{ d.account.broker }}</span></td>
+                    <td style="font-family: monospace; font-size: 0.82rem;">{{ d.symbol }}</td>
                     <td>{{ d.name }}</td>
                     <td style="text-align: right;">{{ d.amount | currency(d.currency) }}</td>
                     <td style="text-align: right; color: var(--red);">{{ d.tax_amount | currency(d.currency) }}</td>
@@ -82,12 +190,12 @@
 </div>
 {% else %}
 <div class="alert-apple alert-info">
-    {{ current_year }}年の配当金データがありません。「配当金追加」ボタンから登録してください。
+    {{ current_year }}年の配当金データがありません。「追加」ボタンから登録してください。
 </div>
 {% endif %}
 
 <!-- 追加モーダル -->
-<div id="addDividendModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:100; justify-content:center; align-items:center;">
+<div id="addDividendModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:1000; justify-content:center; align-items:center;">
     <div class="card-apple" style="width: 480px;">
         <div class="card-apple-header" style="display:flex; justify-content:space-between;">
             <span>配当金を追加</span>
@@ -145,4 +253,118 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    {% if total_amount > 0 %}
+    // 月別配当棒グラフ
+    const monthlyAmounts = [
+        {% for m in range(1, 13) %}{{ monthly_data[m].amount | round(0) }}{{ ',' if not loop.last }}{% endfor %}
+    ];
+    const monthLabels = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+
+    new Chart(document.getElementById('monthlyChart'), {
+        type: 'bar',
+        data: {
+            labels: monthLabels,
+            datasets: [{
+                label: '配当金（税引き前）',
+                data: monthlyAmounts,
+                backgroundColor: monthlyAmounts.map(v => v > 0 ? '#007aff' : 'rgba(0,0,0,0.04)'),
+                borderRadius: 6,
+                barPercentage: 0.6,
+            }],
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: 'rgba(0,0,0,0.78)',
+                    cornerRadius: 10,
+                    padding: 12,
+                    callbacks: {
+                        label: function(ctx) { return formatYenShort(ctx.raw); },
+                    },
+                },
+                datalabels: {
+                    display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] > 0; },
+                    anchor: 'end',
+                    align: 'end',
+                    font: { size: 10, weight: '600' },
+                    color: '#333',
+                    formatter: function(val) { return formatYenShort(val); },
+                },
+            },
+            scales: {
+                x: { grid: { display: false } },
+                y: {
+                    grid: { color: 'rgba(0,0,0,0.04)' },
+                    ticks: {
+                        font: { size: 10 },
+                        callback: function(val) { return formatYenShort(val); },
+                    },
+                },
+            },
+        },
+    });
+    {% endif %}
+
+    {% if by_stock %}
+    // 配当ポートフォリオ（ドーナツチャート）
+    const stockLabels = [{% for s in by_stock %}'{{ s.symbol or s.name }}'{{ ',' if not loop.last }}{% endfor %}];
+    const stockValues = [{% for s in by_stock %}{{ s.amount | round(0) }}{{ ',' if not loop.last }}{% endfor %}];
+
+    createPieChart('dividendPieChart', stockLabels, stockValues, '配当金額');
+    {% endif %}
+});
+
+function loadDividendCalendar() {
+    const area = document.getElementById('calendarArea');
+    area.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);"><i class="bi bi-hourglass-split"></i> 計算中...</div>';
+
+    const familyId = '{{ selected_family_id or "" }}';
+    const url = '/api/dividend_calendar' + (familyId ? '?family_id=' + familyId : '');
+
+    fetch(url)
+    .then(r => r.json())
+    .then(data => {
+        if (data.total_annual === 0) {
+            area.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);font-size:0.88rem;">' +
+                '配当スケジュールが登録されていません。銘柄詳細ページで「配当情報」を取得してください。</div>';
+            return;
+        }
+
+        let html = '<div style="margin-bottom: 16px; text-align: center;">' +
+            '<span style="font-size: 1.2rem; font-weight: 700;">予想年間配当: ' + formatYenShort(data.total_annual) + '</span>' +
+            '<span style="font-size: 0.88rem; color: var(--text-secondary); margin-left: 12px;">(月平均: ' + formatYenShort(Math.round(data.total_annual / 12)) + ')</span>' +
+            '</div>';
+
+        html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">';
+        for (let m = 1; m <= 12; m++) {
+            const total = data.monthly_totals[m] || 0;
+            const items = data.monthly[m] || [];
+            const active = total > 0;
+            html += '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;' + (active ? 'background:rgba(52,199,89,0.05);border-color:var(--green);' : '') + '">';
+            html += '<div style="display:flex;justify-content:space-between;margin-bottom:4px;">';
+            html += '<span style="font-weight:700;font-size:0.88rem;">' + m + '月</span>';
+            html += '<span style="font-weight:700;color:' + (active ? 'var(--green)' : 'var(--text-secondary)') + ';font-size:0.88rem;">' + formatYenShort(total) + '</span>';
+            html += '</div>';
+            items.forEach(function(item) {
+                html += '<div style="font-size:0.72rem;color:var(--text-secondary);display:flex;justify-content:space-between;padding:1px 0;border-top:1px solid var(--border);">';
+                html += '<span>' + item.symbol + '</span><span>' + formatYenShort(item.amount) + '</span></div>';
+            });
+            html += '</div>';
+        }
+        html += '</div>';
+
+        area.innerHTML = html;
+    })
+    .catch(() => {
+        area.innerHTML = '<div style="text-align:center;padding:20px;color:var(--red);">取得に失敗しました</div>';
+    });
+}
+</script>
 {% endblock %}
